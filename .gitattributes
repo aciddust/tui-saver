@@ -1,0 +1,13 @@
+# Normalise line endings to LF in the repository and on checkout, everywhere.
+#
+# This matters more than usual here. src/main.ts starts with a shebang, and a
+# shebang line ending in CR is not a valid interpreter path — a file edited on a
+# Windows box with core.autocrlf=true would stop being executable on macOS and
+# Linux. Pinning eol=lf keeps that from depending on each contributor's git
+# configuration.
+* text=auto eol=lf
+
+# Source and docs are text, stated explicitly so nothing is guessed.
+*.ts   text eol=lf
+*.json text eol=lf
+*.md   text eol=lf

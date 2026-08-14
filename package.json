@@ -1,0 +1,53 @@
+{
+  "name": "tui-saver",
+  "version": "0.1.0",
+  "description": "A terminal ASCII/braille screensaver that keeps the host awake",
+  "type": "module",
+  "license": "MIT",
+  "author": "d3fau1t <18468557+aciddust@users.noreply.github.com>",
+  "homepage": "https://github.com/aciddust/tui-saver#readme",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/aciddust/tui-saver.git"
+  },
+  "bugs": {
+    "url": "https://github.com/aciddust/tui-saver/issues"
+  },
+  "keywords": [
+    "screensaver",
+    "terminal",
+    "tui",
+    "cli",
+    "ascii",
+    "ascii-art",
+    "braille",
+    "animation",
+    "demoscene",
+    "caffeinate",
+    "keep-awake",
+    "prevent-sleep"
+  ],
+  "bin": {
+    "tui-saver": "./dist/main.js"
+  },
+  "files": [
+    "dist",
+    "README.ko.md"
+  ],
+  "scripts": {
+    "start": "node src/main.ts",
+    "list": "node src/main.ts --list",
+    "doctor": "node src/main.ts --doctor",
+    "typecheck": "tsc -p tsconfig.json",
+    "clean": "node -e \"require('node:fs').rmSync('dist',{recursive:true,force:true})\"",
+    "build": "npm run clean && tsc -p tsconfig.build.json",
+    "prepack": "npm run build"
+  },
+  "engines": {
+    "node": ">=23.6.0"
+  },
+  "devDependencies": {
+    "@types/node": "^26.2.0",
+    "typescript": "^7.0.2"
+  }
+}

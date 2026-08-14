@@ -1,0 +1,55 @@
+# Dependencies.
+# The program itself has none at runtime — Node runs the TypeScript directly.
+# This only holds the devDependencies that `npm run typecheck` and the publish
+# build need (typescript, @types/node).
+node_modules/
+
+# Note: package-lock.json is deliberately NOT ignored. There is no lockfile yet
+# because there are no dependencies, but if one appears it belongs in the repo.
+
+# Logs.
+*.log
+npm-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+# TypeScript incremental state. Shows up the moment anyone enables `incremental`.
+*.tsbuildinfo
+
+# Build output. `npm run build` emits dist/ for publishing only; the published
+# tarball is built from a clean tree by prepack, so it never belongs in git.
+dist/
+build/
+out/
+
+# Secrets. Nothing here reads env files; this is here so an accidental one
+# cannot be committed.
+.env
+.env.*
+!.env.example
+
+# Editors and IDEs. Un-ignore a specific file if the team ever wants shared
+# settings, e.g. `!.vscode/extensions.json`.
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# macOS.
+.DS_Store
+.AppleDouble
+.LSOverride
+._*
+
+# Windows. This gets distributed to Windows users, so their shell cruft is
+# worth listing even though it is not generated here.
+Thumbs.db
+Thumbs.db:encryptable
+ehthumbs.db
+desktop.ini
+$RECYCLE.BIN/
+
+# Linux.
+.directory
+.Trash-*
