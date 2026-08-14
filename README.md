@@ -1,5 +1,7 @@
 # tui-saver
 
+![tui-saver-show.gif](./tui-saver-show.gif)
+
 [한국어 문서](README.ko.md)
 
 A terminal screensaver that will not let the host fall asleep. Eighteen scenes —
@@ -41,12 +43,12 @@ Press `?` for the key list, `q` to quit.
 
 The playlist advances every 22 seconds by default. Three ways to stop it:
 
-- **`f` while it's running** — pins whatever is on screen and stops the clock.
-  The status bar switches to `pinned` / `f:unpin`. Press it again to resume
-  cycling. `n` and `p` still work while pinned, so you can step by hand.
-- **`--scene <id>`** — start with only that scene, nothing to advance to.
-- **`--duration 0`** — keep the whole playlist but never advance automatically;
-  `n` / `p` / `1`-`9` drive it.
+- `**f` while it's running** — pins whatever is on screen and stops the clock.
+The status bar switches to `pinned` / `f:unpin`. Press it again to resume
+cycling. `n` and `p` still work while pinned, so you can step by hand.
+- `**--scene <id>**` — start with only that scene, nothing to advance to.
+- `**--duration 0**` — keep the whole playlist but never advance automatically;
+`n` / `p` / `1`-`9` drive it.
 
 `--only globe,fire` is the in-between case: a short playlist of just the scenes
 you want, still cycling.
@@ -57,11 +59,13 @@ Each platform has some way to say "don't idle out while I'm running", and all
 three are expressed the same way here: launch a small helper that takes the lock
 and then **watches our pid**, so it releases on its own when we go away.
 
-| | mechanism |
-| --- | --- |
-| macOS | `caffeinate -dis -w <pid>` |
-| Windows | `powershell` -> `SetThreadExecutionState`, then `Wait-Process <pid>` |
-| Linux | `systemd-inhibit --what=idle:sleep -- tail --pid=<pid> -f /dev/null` |
+
+|         | mechanism                                                               |
+| ------- | ----------------------------------------------------------------------- |
+| macOS   | `caffeinate -dis -w <pid>`                                              |
+| Windows | `powershell` -&gt; `SetThreadExecutionState`, then `Wait-Process <pid>` |
+| Linux   | `systemd-inhibit --what=idle:sleep -- tail --pid=<pid> -f /dev/null`    |
+
 
 That indirection is the whole design. A lock held by *us* leaks if we are killed
 with `SIGKILL` or `TerminateProcess`, because no cleanup handler runs. A lock held
@@ -147,26 +151,28 @@ Mono, which covers braille and does truecolor.
 
 ## Scenes
 
-| id | mode | what it is |
-| --- | --- | --- |
-| `torus` | ascii | the donut — point-sampled parametric torus, z-buffered, Lambert-shaded |
-| `cube` | ascii | solid cube, flat-shaded faces, only the visible faces' edges stroked |
-| `tesseract` | braille | 4-cube rotating in the xy/zw/xw/yz planes, projected through w |
-| `mobius` | ascii | one-sided surface with two-sided shading and a band that travels around it |
-| `globe` | half | ray-cast Earth: real coastlines, day/night terminator, city lights, ocean glint |
-| `waves` | braille | wireframe height field of interfering travelling ripples |
-| `plasma` | half | five sine fields summed and read through a cyclic palette |
-| `tunnel` | half | perspective-correct polar tunnel, wandering vanishing point |
-| `starfield` | braille | stars streaking past, with periodic warp bursts |
-| `metaballs` | half | seven blobs merging and splitting, contour-banded |
-| `fire` | half | the 1993 DOOM fire algorithm, in colour |
-| `lorenz` | half | the butterfly |
-| `aizawa` | half | a spindle wound with a torus |
-| `thomas` | half | cyclically symmetric, three-fold and looping |
-| `mandelbrot` | half | endless dive into the seahorse valley, smooth-iteration banded |
-| `harmonograph` | braille | four damped pendulums inking a figure, then starting a new one |
-| `hilbert` | braille | space-filling curve drawing itself, refining order by order |
-| `raymarch` | half | smooth-union SDF primitives with shadow and ambient occlusion |
+
+| id             | mode    | what it is                                                                      |
+| -------------- | ------- | ------------------------------------------------------------------------------- |
+| `torus`        | ascii   | the donut — point-sampled parametric torus, z-buffered, Lambert-shaded          |
+| `cube`         | ascii   | solid cube, flat-shaded faces, only the visible faces' edges stroked            |
+| `tesseract`    | braille | 4-cube rotating in the xy/zw/xw/yz planes, projected through w                  |
+| `mobius`       | ascii   | one-sided surface with two-sided shading and a band that travels around it      |
+| `globe`        | half    | ray-cast Earth: real coastlines, day/night terminator, city lights, ocean glint |
+| `waves`        | braille | wireframe height field of interfering travelling ripples                        |
+| `plasma`       | half    | five sine fields summed and read through a cyclic palette                       |
+| `tunnel`       | half    | perspective-correct polar tunnel, wandering vanishing point                     |
+| `starfield`    | braille | stars streaking past, with periodic warp bursts                                 |
+| `metaballs`    | half    | seven blobs merging and splitting, contour-banded                               |
+| `fire`         | half    | the 1993 DOOM fire algorithm, in colour                                         |
+| `lorenz`       | half    | the butterfly                                                                   |
+| `aizawa`       | half    | a spindle wound with a torus                                                    |
+| `thomas`       | half    | cyclically symmetric, three-fold and looping                                    |
+| `mandelbrot`   | half    | endless dive into the seahorse valley, smooth-iteration banded                  |
+| `harmonograph` | braille | four damped pendulums inking a figure, then starting a new one                  |
+| `hilbert`      | braille | space-filling curve drawing itself, refining order by order                     |
+| `raymarch`     | half    | smooth-union SDF primitives with shadow and ambient occlusion                   |
+
 
 ## Render modes
 
@@ -174,13 +180,13 @@ Scenes never touch characters. They draw into a sub-character pixel grid, and th
 canvas turns that into cells one of three ways:
 
 - **braille** — 2×4 pixels per cell via `U+28xx`, so eight times the resolution
-  of plain text. One bit of coverage per dot and one colour per cell. Best for
-  line work: wireframes, curves, particles.
+of plain text. One bit of coverage per dot and one colour per cell. Best for
+line work: wireframes, curves, particles.
 - **half** — 1×2 pixels per cell using `▀` with the lower pixel as the
-  background colour. Full colour per pixel. Best for dense fields and anything
-  where a smooth gradient is the point.
+background colour. Full colour per pixel. Best for dense fields and anything
+where a smooth gradient is the point.
 - **ascii** — one pixel per cell mapped onto a character ramp. Best for
-  luminance-shaded solids, and the only mode that says anything without colour.
+luminance-shaded solids, and the only mode that says anything without colour.
 
 Each scene declares the one it suits; `m` cycles the override live, `--mode`
 forces it for everything. Braille and half-block pixels come out roughly square;
@@ -255,12 +261,14 @@ makes neighbouring cells in a gradient byte-identical so runs collapse — worth
 
 That gets most scenes to well under 1 MB/s at 132×38 truecolour:
 
-| | KB/frame | at 32 fps |
-| --- | --- | --- |
-| `tesseract` (braille, sparse) | 6 | 0.19 MB/s |
-| `torus` (ascii) | 17 | 0.52 MB/s |
-| `globe` (half) | 26 | 0.82 MB/s |
-| `plasma` (half, every pixel changes) | 136 | 4.2 MB/s |
+
+|                                      | KB/frame | at 32 fps |
+| ------------------------------------ | -------- | --------- |
+| `tesseract` (braille, sparse)        | 6        | 0.19 MB/s |
+| `torus` (ascii)                      | 17       | 0.52 MB/s |
+| `globe` (half)                       | 26       | 0.82 MB/s |
+| `plasma` (half, every pixel changes) | 136      | 4.2 MB/s  |
+
 
 A full-screen per-pixel shader like `plasma` is the worst case and stays
 expensive: every cell needs both a foreground and a background colour, and
