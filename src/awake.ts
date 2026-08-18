@@ -23,16 +23,54 @@
  * should it.
  */
 
-import { type ChildProcess, execFileSync, spawn } from 'node:child_process';
+import { type ChildProcess, execFile, execFileSync, spawn } from 'node:child_process';
 
 export type AwakeState = 'off' | 'holding' | 'unsupported' | 'failed';
+
+/**
+ * What a watcher prints on stdout once it has confirmed the lock is held, and
+ * again on every wait iteration. Only Windows can report this — caffeinate and
+ * systemd-inhibit are not ours to teach — but where it exists it is better
+ * evidence than "the child process is still alive", and it removes the fixed
+ * delay that asking the OS too early would otherwise need.
+ */
+export const HELD_MARKER = 'tui-saver:held';
 
 export type AwakeOptions = {
   /** Hold the sleep lock at all. */
   enabled: boolean;
   /** Also declare synthetic user activity to hold off the screen saver. */
   defeatScreensaver: boolean;
+  /**
+   * How often to ask the OS whether the lock is still held. 0 disables it.
+   * A running watcher is not proof: the lock could have been refused, or dropped
+   * by something outside this program, and the process would look identical.
+   */
+  verifyIntervalMs?: number;
 };
+
+/**
+ * How good the reason to believe the lock is held actually is. Worth
+ * distinguishing because the three platforms cannot offer the same one: only
+ * some can be asked, and where they cannot, saying so is better than implying an
+ * answer nobody gave.
+ *
+ *   os           the platform's own tool reports the lock, recently
+ *   self-report  the watcher says it holds it; nobody independent has agreed
+ *   liveness     the watcher process is running, and that is all we know
+ *   none         we are not holding anything
+ */
+export type AwakeEvidence = 'none' | 'liveness' | 'self-report' | 'os';
+
+/** Default seconds between re-verifications. */
+const VERIFY_INTERVAL_MS = 90_000;
+
+/**
+ * How many intervals an answer stays good for. Beyond this the answer is stale —
+ * which happens when the query itself starts failing — and evidence drops back
+ * rather than showing a tick mark earned hours ago.
+ */
+const STALE_AFTER_INTERVALS = 3;
 
 /** How to verify the lock from outside this program. */
 export type VerifyCommand = {
@@ -49,10 +87,10 @@ export type VerifyCommand = {
 export type WatcherCommand = {
   cmd: string;
   args: string[];
-  opts: { stdio: 'ignore'; windowsHide?: boolean };
+  opts: { stdio: 'ignore' | ('ignore' | 'pipe')[]; windowsHide?: boolean };
 };
 
-type Backend = {
+export type Backend = {
   platform: string;
   /** Short description of the mechanism, for --doctor. */
   mechanism: string;
@@ -163,7 +201,12 @@ function windowsScript(pid: number, pulse: boolean): string {
     `  public static extern uint SetThreadExecutionState(uint esFlags);`,
     `}`,
     `'@`,
-    `[void][Awake]::SetThreadExecutionState([uint32]${HOLD})`,
+    // The return value is the *previous* state, or 0 if the request was refused.
+    // Discarding it — which this line used to do — left a watcher sitting in its
+    // wait loop holding nothing at all while the parent happily reported awake.
+    `$r = [Awake]::SetThreadExecutionState([uint32]${HOLD})`,
+    `if ($r -eq 0) { throw 'SetThreadExecutionState refused the request' }`,
+    `Write-Output '${HELD_MARKER}'`,
     // The keystroke line is omitted entirely rather than guarded at runtime.
     // This program gets distributed, and someone reading the script — or a
     // security tool scanning it — should find no input-injection code at all
@@ -175,6 +218,12 @@ function windowsScript(pid: number, pulse: boolean): string {
     // the pulse cadence comes for free from the same wait.
     `    Wait-Process -Id ${pid} -Timeout 45 -ErrorAction SilentlyContinue`,
     `    if (-not (Get-Process -Id ${pid} -ErrorAction SilentlyContinue)) { break }`,
+    // Re-asserting the same flags is a no-op the OS is happy to repeat, and it
+    // turns the wait loop into a heartbeat: the parent learns the request is
+    // still real without needing the elevated prompt powercfg would want.
+    `    $r = [Awake]::SetThreadExecutionState([uint32]${HOLD})`,
+    `    if ($r -eq 0) { throw 'SetThreadExecutionState refused the request' }`,
+    `    Write-Output '${HELD_MARKER}'`,
     ...(pulse ? [`    $shell.SendKeys('{F15}')`] : []),
     `  }`,
     `} finally {`,
@@ -193,8 +242,10 @@ const win32: Backend = {
     return {
       cmd: 'powershell.exe',
       args: ['-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-EncodedCommand', encoded],
+      // stdout is kept because the watcher reports through it; stderr is not,
+      // since PowerShell's error text is of no use to a full-screen animation.
       // windowsHide keeps a console window from flashing up over the animation.
-      opts: { stdio: 'ignore', windowsHide: true },
+      opts: { stdio: ['ignore', 'pipe', 'ignore'], windowsHide: true },
     };
   },
   verify: {
@@ -283,14 +334,53 @@ export function watcherCommandFor(
 export class Awake {
   state: AwakeState = 'off';
   detail = '';
+  /**
+   * Whether the lock was ever lost during this run. The animation carries on
+   * either way, but a run that spent time not holding what it promised should
+   * not exit claiming success.
+   */
+  everFailed = false;
+  /** When the OS last confirmed the lock, or null if it never has. */
+  lastVerifiedAt: number | null = null;
+  private lastHeartbeatAt: number | null = null;
+  private verifyTimer: NodeJS.Timeout | null = null;
   private child: ChildProcess | null = null;
   private stopPulse: (() => void) | null = null;
   private opts: AwakeOptions;
-  private backend: Backend | undefined;
+  private backend: Backend | null;
+  /**
+   * One replacement, not an unbounded supply. A watcher that dies because
+   * something transient got in the way is worth relaunching; a watcher that
+   * cannot stay up is a fact to report, and retrying it forever would be a
+   * process-spawn loop nobody asked for.
+   */
+  private retriesLeft = 1;
 
-  constructor(opts: AwakeOptions) {
+  /**
+   * @param backend defaults to this platform's. Pass one explicitly — or null
+   * for none — to drive the state machine somewhere other than where it runs.
+   */
+  constructor(opts: AwakeOptions, backend?: Backend | null) {
     this.opts = opts;
-    this.backend = backendFor(process.platform);
+    this.backend = backend === undefined ? (backendFor(process.platform) ?? null) : backend;
+  }
+
+  /** The pid of the process currently holding the lock, if there is one. */
+  get watcherPid(): number | null {
+    return this.child?.pid ?? null;
+  }
+
+  private get verifyInterval(): number {
+    return this.opts.verifyIntervalMs ?? VERIFY_INTERVAL_MS;
+  }
+
+  /** How good our reason to believe the lock is held actually is. */
+  get evidence(): AwakeEvidence {
+    if (this.state !== 'holding') return 'none';
+    const fresh = this.verifyInterval * STALE_AFTER_INTERVALS;
+    if (this.lastVerifiedAt !== null && Date.now() - this.lastVerifiedAt < fresh) return 'os';
+    if (this.lastHeartbeatAt !== null) return 'self-report';
+    return 'liveness';
   }
 
   start(): void {
@@ -299,28 +389,71 @@ export class Awake {
       this.detail = 'disabled by --no-awake';
       return;
     }
-    const backend = this.backend;
-    if (!backend) {
+    if (!this.backend) {
       this.state = 'unsupported';
       this.detail = `no sleep-suppression backend for ${process.platform}`;
       return;
     }
+    this.launch();
+    this.scheduleVerify(Math.min(this.verifyInterval, 500));
+  }
+
+  /**
+   * Asks the platform's own tool whether the lock is held, on a timer that
+   * reschedules itself only after each answer arrives — so a slow query cannot
+   * stack up behind itself.
+   */
+  private scheduleVerify(delay: number): void {
+    const v = this.backend?.verify;
+    // An elevated query is no use here: it would fail for a reason that says
+    // nothing about the lock, every single time.
+    if (!v || v.needsElevation || this.verifyInterval <= 0) return;
+    if (this.verifyTimer) clearTimeout(this.verifyTimer);
+    this.verifyTimer = setTimeout(() => {
+      if (this.state !== 'holding') return;
+      execFile(v.cmd, v.args, { encoding: 'utf8' }, (err, stdout) => {
+        if (this.state !== 'holding') return;
+        if (err) {
+          // Being unable to ask is not a no. The answer simply goes stale, which
+          // `evidence` reports on its own without inventing a failure.
+        } else {
+          const missing = v.expect.filter((key) => !stdout.includes(key));
+          if (missing.length > 0) {
+            this.fail(`the OS no longer reports ${missing.join(', ')} — ${v.display}`);
+            return;
+          }
+          this.lastVerifiedAt = Date.now();
+        }
+        this.scheduleVerify(this.verifyInterval);
+      });
+    }, delay);
+    this.verifyTimer.unref();
+  }
+
+  private launch(): void {
+    const backend = this.backend;
+    if (!backend) return;
     try {
       const { cmd, args, opts } = backend.command(process.pid, this.opts.defeatScreensaver);
       const child = spawn(cmd, args, opts);
       this.child = child;
+      this.readHeartbeat(child);
       child.on('error', (err: Error) => {
-        this.state = 'failed';
-        this.detail = err.message;
         this.child = null;
+        // A command that cannot be launched will not launch on the second ask
+        // either, so this one does not retry.
+        this.fail(err.message);
       });
-      child.on('exit', (code) => {
-        // Only meaningful if the watcher dies while we are still running.
-        if (this.state === 'holding') {
-          this.state = 'failed';
-          this.detail = `watcher exited early (code ${code})`;
-        }
+      child.on('exit', (code, signal) => {
         this.child = null;
+        // Any other state means we are shutting down, or already know we failed.
+        if (this.state !== 'holding') return;
+        if (this.retriesLeft > 0) {
+          this.retriesLeft--;
+          this.launch();
+          return;
+        }
+        this.fail(`watcher exited early (code ${code}${signal ? `, ${signal}` : ''})`);
       });
       this.state = 'holding';
       this.detail = backend.mechanism;
@@ -328,15 +461,48 @@ export class Awake {
         this.detail += ' +user-activity';
         // Windows folds the pulse into the watcher itself; the others need a
         // timer here.
-        this.stopPulse = backend.startPulse?.() ?? null;
+        this.stopPulse ??= backend.startPulse?.() ?? null;
       }
     } catch (err) {
-      this.state = 'failed';
-      this.detail = err instanceof Error ? err.message : String(err);
+      this.fail(err instanceof Error ? err.message : String(err));
     }
   }
 
+  /**
+   * Consumes the watcher's own reports, where it has any. Only the Windows
+   * watcher can talk: it is a script we wrote, and it prints a line each time it
+   * has re-asserted the flags. Reading whole lines matters — a timestamp updated
+   * by a repeated substring in a growing buffer would say "still held" forever.
+   */
+  private readHeartbeat(child: ChildProcess): void {
+    const out = child.stdout;
+    if (!out) return;
+    out.setEncoding('utf8');
+    let pending = '';
+    out.on('data', (chunk: string) => {
+      pending += chunk;
+      const lines = pending.split('\n');
+      pending = lines.pop() ?? '';
+      for (const line of lines) {
+        if (line.trim() === HELD_MARKER) this.lastHeartbeatAt = Date.now();
+      }
+    });
+    out.on('error', () => {
+      /* the exit handler is the one that matters */
+    });
+  }
+
+  private fail(detail: string): void {
+    this.state = 'failed';
+    this.detail = detail;
+    this.everFailed = true;
+  }
+
   stop(): void {
+    if (this.verifyTimer) {
+      clearTimeout(this.verifyTimer);
+      this.verifyTimer = null;
+    }
     if (this.stopPulse) {
       this.stopPulse();
       this.stopPulse = null;
