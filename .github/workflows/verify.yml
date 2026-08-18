@@ -13,8 +13,8 @@ on:
 
 jobs:
   render:
-    # Type checking and the scene soak. Same code path everywhere, so a failure
-    # on any platform is a real failure.
+    # Type checking, the unit tests and the scene soak. Same code path
+    # everywhere, so a failure on any platform is a real failure.
     name: render (${{ matrix.os }})
     strategy:
       fail-fast: false
@@ -28,6 +28,7 @@ jobs:
           node-version: '24'
       - run: npm ci
       - run: npm run typecheck
+      - run: npm test
       - run: node tools/soak.ts
 
   awake:

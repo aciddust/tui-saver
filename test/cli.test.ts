@@ -31,3 +31,20 @@ test('an option missing its value throws rather than reading the next flag', () 
 test('a non-numeric --fps throws', () => {
   assert.throws(() => parseArgs(['--fps', 'fast']), CliError);
 });
+
+test('--require-awake is off unless asked for', () => {
+  assert.equal(parseArgs([]).opts.requireAwake, false);
+  assert.equal(parseArgs(['--require-awake']).opts.requireAwake, true);
+});
+
+test('--require-awake and --no-awake cannot both be meant', () => {
+  for (const argv of [['--require-awake', '--no-awake'], ['--no-awake', '--require-awake']]) {
+    assert.throws(() => parseArgs(argv), (err: unknown) => {
+      assert.ok(err instanceof CliError);
+      // Not merely "unknown option" — the message has to name the contradiction.
+      assert.match(err.message, /--require-awake/);
+      assert.match(err.message, /--no-awake/);
+      return true;
+    }, argv.join(' '));
+  }
+});

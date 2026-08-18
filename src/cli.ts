@@ -27,6 +27,8 @@ export type Options = {
   shuffle: boolean;
   hud: boolean;
   awake: boolean;
+  /** Refuse to run at all unless the lock is confirmed held. */
+  requireAwake: boolean;
   defeatScreensaver: boolean;
   /** null = detect whether the terminal font is likely to have braille. */
   braille: boolean | null;
@@ -45,6 +47,7 @@ export const DEFAULTS: Options = {
   shuffle: false,
   hud: true,
   awake: true,
+  requireAwake: false,
   defeatScreensaver: false,
   braille: null,
 };
@@ -87,6 +90,7 @@ look
 
 staying awake
   --no-awake              do not hold any power assertion
+  --require-awake         exit rather than run without a confirmed lock
   --defeat-screensaver    also pulse synthetic user activity so the screen
                           saver and lock screen stay away
   --doctor                report what the kernel says about the assertions
@@ -205,12 +209,18 @@ export function parseArgs(argv: string[]): { opts: Options; exit?: () => Promise
       case '--no-awake':
         opts.awake = false;
         break;
+      case '--require-awake':
+        opts.requireAwake = true;
+        break;
       case '--defeat-screensaver':
         opts.defeatScreensaver = true;
         break;
       default:
         throw new CliError(`unknown option: ${a}`, 2, true);
     }
+  }
+  if (opts.requireAwake && !opts.awake) {
+    throw new CliError('--require-awake and --no-awake contradict each other; pick one');
   }
   return { opts };
 }

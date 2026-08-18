@@ -16,6 +16,7 @@ const BRIGHT = pack(0.85, 0.9, 0.95);
 const ACCENT = pack(0.4, 0.78, 0.92);
 const WARN = pack(0.95, 0.55, 0.35);
 const PANEL = pack(0.05, 0.06, 0.09);
+const ALARM = pack(0.45, 0.11, 0.05);
 
 export function drawText(
   cb: CellBuffer,
@@ -48,6 +49,20 @@ function clearRow(cb: CellBuffer, y: number, bg: number): void {
     cb.fg[i] = DIM;
     cb.bg[i] = bg;
   }
+}
+
+/**
+ * A warning across the top row, drawn whether or not the status bar is showing.
+ *
+ * The status bar can be hidden with `h` or never shown at all with --no-hud, and
+ * the one thing this program promises is the one thing that must not be hideable:
+ * an animation running while the machine sleeps under it looks exactly like an
+ * animation running while it does not. The top row is used because the status bar
+ * owns the bottom one.
+ */
+export function drawBanner(cb: CellBuffer, text: string): void {
+  clearRow(cb, 0, ALARM);
+  drawText(cb, 1, 0, text, BRIGHT, ALARM);
 }
 
 export type HudInfo = {
