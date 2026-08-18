@@ -386,7 +386,8 @@ const linux: Backend = {
 
 const BACKENDS: readonly Backend[] = [darwin, win32, linux];
 
-function backendFor(platform: string): Backend | undefined {
+/** This platform's backend, or another's. Exported so tools can drive one directly. */
+export function backendFor(platform: string): Backend | undefined {
   return BACKENDS.find((b) => b.platform === platform);
 }
 

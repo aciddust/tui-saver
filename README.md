@@ -330,6 +330,26 @@ animation. `--defeat-screensaver` mitigates it per platform — a short
 keystroke on Windows. Best-effort: a screen lock enforced by security policy or
 group policy is not something a user-space program overrides, and shouldn't be.
 
+Two of the three are now measured rather than assumed, by `tools/check-awake.ts` on
+every push:
+
+- **macOS** — after a pulse, `pmset -g assertions` shows a `UserIsActive` assertion
+  named for `caffeinate`, and it disappears when the two-second timeout expires.
+- **Windows** — `GetLastInputInfo` moves. That is the measurement that settles it,
+  because the screen saver runs off that timer, and it had never been taken:
+
+  ```
+  before          56000
+  after 3s idle   56000     (nothing else is generating input)
+  after the pulse 1978953
+  ```
+
+  The watcher only pulses once per 45-second wait, too slow to sit through in a
+  check, so the mechanism is measured directly and the static checks confirm the
+  watcher script carries that exact keystroke line — and carries it only when asked.
+- **Linux** — `xdg-screensaver reset` reports nothing and needs a display, so the
+  check fires it and says plainly that it cannot confirm it landed.
+
 Note the Windows pulse is the only part of this that touches the rest of the
 desktop. The keystroke code is **omitted from the generated script entirely**
 unless you pass the flag, rather than being present and skipped at runtime — so
