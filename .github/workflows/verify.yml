@@ -1,0 +1,58 @@
+# What this repo cannot verify by reading, it verifies here.
+#
+# The renderer is platform-independent and its checks gate every push. The sleep
+# lock is not: it is three different mechanisms behind one interface, and two of
+# them had never been executed by anyone when they were written. This workflow
+# exists mainly to change that.
+name: verify
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  render:
+    # Type checking and the scene soak. Same code path everywhere, so a failure
+    # on any platform is a real failure.
+    name: render (${{ matrix.os }})
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [macos-latest, ubuntu-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+      - run: npm ci
+      - run: npm run typecheck
+      - run: node tools/soak.ts
+
+  awake:
+    # The load-bearing one. tools/check-awake.ts holds the real lock against a
+    # throwaway process, asks the OS whether it is held, then SIGKILLs the target
+    # and confirms the watcher lets go.
+    #
+    # macOS is confirmed working and gates the build. Windows and Linux are
+    # implemented but were never executed by the author, so they report rather
+    # than fail until a green run here proves otherwise — a red X on code nobody
+    # has ever run tells us nothing we did not already write in the README.
+    # Once a platform goes green, drop it from the continue-on-error expression
+    # so it starts gating like macOS does.
+    name: awake (${{ matrix.os }})
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [macos-latest, ubuntu-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    continue-on-error: ${{ matrix.os != 'macos-latest' }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+      # No npm ci: this tool imports src/awake.ts and nothing else, and running
+      # it without the devDependencies proves the program itself needs none.
+      - run: node tools/check-awake.ts
