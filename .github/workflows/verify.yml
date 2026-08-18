@@ -88,6 +88,38 @@ jobs:
           echo "root idle:sleep block rc=$? :: ${out:-<silent>}"
           echo
           echo "--- what the idle timer even is here ---"
-          systemd-inhibit --list 2>&1 | head -5
           loginctl show-seat seat0 2>&1 | head -5
+          echo
+          echo "--- systemd-inhibit --list, with one of ours held, verbatim ---"
+          # Captured rather than remembered: the audit in --doctor has to parse this,
+          # and a parser written from memory is a parser written blind.
+          systemd-inhibit --what=idle --mode=block --who=tui-saver --why='probe capture' \
+            sh -c 'systemd-inhibit --list' 2>&1 | cat -A | head -20
+          exit 0
+
+  probe-windows:
+    # The Windows half of the same question: powercfg /requests is what the audit
+    # parses, and a GitHub runner is elevated, so this is the one place its real
+    # output can be seen.
+    if: github.event_name == 'workflow_dispatch'
+    name: probe (windows powercfg output)
+    runs-on: windows-latest
+    steps:
+      - name: what powercfg actually prints
+        shell: pwsh
+        run: |
+          Write-Output '--- powercfg /requests, nothing held ---'
+          powercfg /requests
+          Write-Output '--- powercfg /requests, with a display request held ---'
+          Add-Type -TypeDefinition @'
+          using System;
+          using System.Runtime.InteropServices;
+          public static class Hold {
+            [DllImport("kernel32.dll", SetLastError = true)]
+            public static extern uint SetThreadExecutionState(uint esFlags);
+          }
+          '@
+          [void][Hold]::SetThreadExecutionState([uint32]2147483651)
+          powercfg /requests
+          [void][Hold]::SetThreadExecutionState([uint32]2147483648)
           exit 0
