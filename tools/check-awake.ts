@@ -20,7 +20,7 @@
  */
 
 import { execFileSync, spawn } from 'node:child_process';
-import { HELD_MARKER, watcherCommandFor, supportedPlatforms } from '../src/awake.ts';
+import { HELD_MARKER, backendFor, watcherCommandFor, supportedPlatforms } from '../src/awake.ts';
 
 let failures = 0;
 const check = (ok: boolean, label: string, detail = ''): void => {
@@ -217,6 +217,102 @@ if (!mine) {
       /* nothing more to do */
     }
   }
+}
+
+// ---------------------------------------------------------------------------
+head('synthetic user activity (--defeat-screensaver)');
+
+/**
+ * What counts as proof that a pulse landed, per platform. Only macOS can be asked
+ * directly: a caffeinate -u assertion shows up by name. Windows keeps its pulse
+ * inside the watcher script and is measured by the probe workflow instead, since
+ * GetLastInputInfo needs a before-and-after rather than a substring.
+ */
+const pulseLanded: Record<string, () => boolean> = {
+  darwin: () => {
+    const report = execFileSync('pmset', ['-g', 'assertions'], {
+      encoding: 'utf8',
+      stdio: ['ignore', 'pipe', 'pipe'],
+    });
+    return report
+      .split('\n')
+      .some((l) => l.includes('UserIsActive') && l.includes('caffeinate'));
+  },
+};
+
+const pulseBackend = backendFor(process.platform);
+if (!pulseBackend) {
+  process.stdout.write(`  skipped: no backend for ${process.platform}\n`);
+} else if (process.platform === 'win32') {
+  // Windows folds the pulse into the watcher, which only fires it once per 45s wait
+  // — too slow to sit through here. So the mechanism is measured directly instead,
+  // and the static checks above already confirm the watcher script contains this
+  // exact keystroke line when, and only when, it was asked for.
+  //
+  // GetLastInputInfo is the thing that decides the question: the screen saver runs
+  // off it, so a pulse that does not move it does nothing at all.
+  const script = [
+    `$ErrorActionPreference = 'Stop'`,
+    `Add-Type -TypeDefinition @'`,
+    `using System;`,
+    `using System.Runtime.InteropServices;`,
+    `public static class Idle {`,
+    `  [StructLayout(LayoutKind.Sequential)]`,
+    `  public struct LASTINPUTINFO { public uint cbSize; public uint dwTime; }`,
+    `  [DllImport("user32.dll")]`,
+    `  public static extern bool GetLastInputInfo(ref LASTINPUTINFO plii);`,
+    `  public static uint LastInput() {`,
+    `    LASTINPUTINFO i = new LASTINPUTINFO();`,
+    `    i.cbSize = (uint)Marshal.SizeOf(i);`,
+    `    GetLastInputInfo(ref i);`,
+    `    return i.dwTime;`,
+    `  }`,
+    `}`,
+    `'@`,
+    `$idle = [Idle]::LastInput()`,
+    `Start-Sleep -Milliseconds 1200`,
+    `$shell = New-Object -ComObject WScript.Shell`,
+    `$shell.SendKeys('{F15}')`,
+    `Start-Sleep -Milliseconds 400`,
+    `if ([Idle]::LastInput() -gt $idle) { Write-Output 'PULSE_LANDED' } else { Write-Output 'PULSE_MISSED' }`,
+  ].join('\n');
+  let report = '';
+  let why = '';
+  try {
+    report = execFileSync(
+      'powershell.exe',
+      [
+        '-NoProfile',
+        '-NonInteractive',
+        '-ExecutionPolicy',
+        'Bypass',
+        '-EncodedCommand',
+        Buffer.from(script, 'utf16le').toString('base64'),
+      ],
+      { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] },
+    );
+  } catch (err) {
+    why = (err instanceof Error ? err.message : String(err)).split('\n')[0];
+  }
+  check(report.includes('PULSE_LANDED'), 'SendKeys {F15} moved GetLastInputInfo', why || report.trim());
+} else {
+  const stopPulse = pulseBackend.startPulse();
+  await sleep(700);
+  const landed = pulseLanded[process.platform];
+  if (landed) {
+    let ok = false;
+    let why = '';
+    try {
+      ok = landed();
+    } catch (err) {
+      why = (err instanceof Error ? err.message : String(err)).split('\n')[0];
+    }
+    check(ok, 'the pulse registered as user activity', why);
+  } else {
+    // Linux fires xdg-screensaver reset, which reports nothing and needs a display.
+    process.stdout.write('  note  the pulse fired; this platform offers no way to confirm it landed\n');
+  }
+  stopPulse();
 }
 
 head(failures === 0 ? 'all checks passed' : `${failures} check(s) failed`);
