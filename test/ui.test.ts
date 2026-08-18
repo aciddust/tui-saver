@@ -48,6 +48,7 @@ function hud(over: Partial<HudInfo> = {}): string {
     elapsed: 0,
     sessionRemaining: null,
     battery: null,
+    remote: null,
     ...over,
   });
   return rowText(cb, 11);
@@ -82,4 +83,12 @@ test('a draining battery is shown without the charging mark', () => {
 
 test('a machine with no battery says nothing about one', () => {
   assert.doesNotMatch(hud({ battery: null }), /bat/);
+});
+
+test('the status bar names the host when the lock is not on this machine', () => {
+  assert.match(hud({ remote: 'build-box' }), /ssh:build-box/);
+});
+
+test('a local run has no host segment at all', () => {
+  assert.doesNotMatch(hud({ remote: null }), /ssh:/);
 });

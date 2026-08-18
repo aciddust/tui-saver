@@ -94,6 +94,8 @@ export type HudInfo = {
   sessionRemaining: number | null;
   /** The battery, or null on a machine that has none to report. */
   battery: Battery | null;
+  /** The host being kept awake, when it is not the one being typed at. */
+  remote: string | null;
   awake: string;
   awakeOk: boolean;
 };
@@ -125,6 +127,10 @@ export function drawHud(cb: CellBuffer, info: HudInfo): void {
   // overlay: wanting to stop on the scene you are looking at is the first thing
   // anyone reaches for, and a key you have to go find is a key you don't know
   // exists. The label states what pressing it will do, not the current state.
+  // Ahead of the battery and the clock, because it changes what those mean: they
+  // describe the far machine, not this one.
+  if (info.remote) x = drawText(cb, x, y, `  ssh:${info.remote}`, WARN, PANEL);
+
   if (info.battery) {
     // The charge earns its place here because the lock is the reason it is going
     // down: nothing else on this bar explains why the machine is not resting.

@@ -1,5 +1,6 @@
 /**
- * How long a run should last, and when it should stop by itself.
+ * Facts about the run itself: how long it should last, when it should stop by
+ * itself, and which machine it is keeping awake.
  *
  * Separate from the frame loop because these are decisions rather than drawing,
  * and because "should this run stop now?" is the sort of question that is easy to
@@ -65,4 +66,26 @@ export function batteryGuard(
   const since = lowSince ?? now;
   const left = graceMs - (now - since);
   return { lowSince: since, stop: left <= 0, secondsLeft: Math.max(0, Math.ceil(left / 1000)) };
+}
+
+/**
+ * The host this run is keeping awake, when that is not the machine the keyboard
+ * is attached to — otherwise null.
+ *
+ * Over ssh, every part of this program works and none of it is about the computer
+ * in front of you: the lock, the battery reading and the idle timer all belong to
+ * the far end. A screensaver whose whole argument is that its state is visible
+ * should not be vague about *whose* state it is showing. It became worth saying
+ * out loud when the Linux backend started working without a login session, which
+ * is exactly the ssh case.
+ *
+ * Only the first label of the hostname, because a status bar has no room for
+ * ip-10-0-1-23.eu-west-1.compute.internal and the first label is the part that
+ * identifies the box anyway.
+ */
+export function remoteHost(env: Record<string, string | undefined>, hostname: string): string | null {
+  const overSsh = Boolean(env.SSH_CONNECTION || env.SSH_TTY || env.SSH_CLIENT);
+  if (!overSsh) return null;
+  const label = hostname.split('.')[0]?.trim();
+  return label ? label : null;
 }
