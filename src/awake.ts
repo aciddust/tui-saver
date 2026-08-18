@@ -26,7 +26,14 @@
 import { type ChildProcess, execFile, execFileSync, spawn } from 'node:child_process';
 import { hostname } from 'node:os';
 
-import { remoteHost } from './session.ts';
+import {
+  describeHolders,
+  parseInhibitList,
+  parsePmsetAssertions,
+  parsePowercfgRequests,
+  type Holder,
+} from './holders.ts';
+import { formatSpan, remoteHost } from './session.ts';
 
 export type AwakeState = 'off' | 'holding' | 'unsupported' | 'failed';
 
@@ -142,6 +149,11 @@ export type Backend = {
    */
   startPulse?(): () => void;
   verify: VerifyCommand | null;
+  /**
+   * Reads the other holders out of `verify`'s output. Same answer, wider question:
+   * the tool that says whether our lock is held lists everybody else's too.
+   */
+  audit?: (out: string) => Holder[];
   /** Platform-specific caveats printed by --doctor. */
   notes: readonly string[];
 };
@@ -195,6 +207,7 @@ const darwin: Backend = {
     expect: ['PreventUserIdleDisplaySleep', 'PreventUserIdleSystemSleep'],
     display: 'pmset -g assertions',
   },
+  audit: parsePmsetAssertions,
   notes: [
     'The screen saver and lock screen use a separate idle timer. Run with',
     '--defeat-screensaver to also pulse synthetic user activity.',
@@ -300,6 +313,7 @@ const win32: Backend = {
     display: 'powercfg /requests   (run as Administrator)',
     needsElevation: true,
   },
+  audit: parsePowercfgRequests,
   notes: [
     'SetThreadExecutionState does not stop the screen saver. Run with',
     '--defeat-screensaver to also send a harmless F15 keystroke every 45s.',
@@ -358,6 +372,7 @@ const linux: Backend = {
     expect: ['tui-saver'],
     display: 'systemd-inhibit --list',
   },
+  audit: parseInhibitList,
   notes: [
     'Needs systemd-logind, which is what desktop distributions use. On a system',
     'without it the animation still runs but nothing holds the idle timer.',
@@ -762,15 +777,16 @@ export async function doctor(): Promise<number> {
         out(`    ${key.padEnd(28)} ${hit ? 'present' : 'NOT FOUND'}`);
         if (!hit) exit = 1;
       }
-      const mine = report
-        .split('\n')
-        .filter((l) => l.toLowerCase().includes('caffeinate') || l.includes('tui-saver'))
-        .map((l) => l.trim())
-        .filter(Boolean);
-      if (mine.length) {
+      // The same answer, wider question. Whatever tool can say our lock is held
+      // lists everybody else's, and nothing else on this machine will ever mention
+      // the caffeinate somebody left running on Tuesday.
+      const others = backend.audit
+        ? describeHolders(backend.audit(report), [process.pid, held.watcherPid], alive)
+        : [];
+      if (others.length > 0) {
         out('');
-        out('  entries naming this program:');
-        for (const l of mine.slice(0, 8)) out(`    ${l}`);
+        out('  others holding a lock:');
+        for (const line of others) out(`    ${line}`);
       }
     }
   }
@@ -778,6 +794,16 @@ export async function doctor(): Promise<number> {
   printNotes(out, backend);
   held.stop();
   return exit;
+}
+
+/** Whether a pid exists, without signalling it. */
+function alive(pid: number): boolean {
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch {
+    return false;
+  }
 }
 
 function printNotes(out: (s?: string) => void, backend: Backend): void {

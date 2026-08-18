@@ -2,7 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 
 import { CliError, parseDuration, parseUntil } from '../src/cli.ts';
-import { formatSpan } from '../src/ui.ts';
+import { formatSpan } from '../src/session.ts';
 
 test('a bare number is seconds, like every other duration in this program', () => {
   assert.equal(parseDuration('45'), 45);

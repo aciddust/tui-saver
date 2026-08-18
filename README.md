@@ -210,6 +210,51 @@ interrupted.
 prints which grade of evidence it got alongside the platform's own view of it — so
 you never have to take this file's word for any of it.
 
+### What else is holding one
+
+The tool that answers "is my lock held?" lists everybody else's too, so `--doctor`
+reports them. Real output from the machine this was written on:
+
+```
+  others holding a lock:
+    pid   366  powerd          3h02m  PreventUserIdleSystemSleep, InternalPreventDisplaySleep
+    pid 16638  caffeinate      3h01m  PreventUserIdleSystemSleep, PreventUserIdleDisplaySleep
+    pid   425  WindowServer    9m40s  UserIsActive
+    pid 39289  caffeinate      1m11s  PreventUserIdleSystemSleep
+```
+
+Longest first, because nothing else on this machine will ever mention the
+`caffeinate -dis` somebody left running on Tuesday. This program's own lock and its
+watcher are left out — a watcher is recognised by the pid it was created *for*, not
+by its name.
+
+Exactly one thing gets a verdict:
+
+```
+    pid 16638  caffeinate      3h01m  PreventUserIdleSystemSleep
+      LEAKED: taken for pid 16577, which no longer exists - release it with: kill 16638
+```
+
+`caffeinate -w` records who it is waiting for, so a dead target is a fact. **Age is
+not.** The first version of this flagged anything over an hour, and the first machine
+it ran on had macOS's own `powerd` holding `PreventUserIdleSystemSleep` for three
+hours, which is what `powerd` does. The flag taught nobody anything and buried the
+lines that mattered. Durations are reported and sorted instead.
+
+What each platform can say differs, and the output does not pretend otherwise:
+
+
+| query                          | pid | process   | duration | on behalf of |
+| ------------------------------ | --- | --------- | -------- | ------------ |
+| `pmset -g assertions`          | yes | yes       | yes      | yes          |
+| `systemd-inhibit --list`       | yes | yes       | no       | no           |
+| `powercfg /requests`           | no  | path only | no       | no           |
+
+
+Where there are no durations the column is dropped rather than left blank, and a
+line says so. Windows needs an Administrator prompt to answer at all and names no
+pid, so our own watcher cannot be told apart from any other PowerShell there.
+
 ### Verifying it yourself
 
 ```sh

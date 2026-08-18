@@ -261,6 +261,57 @@ PowerShell이 P/Invoke 껍데기를 컴파일하는 동안은 아직 잠금이 �
 어떤 등급의 근거를 받았는지와 운영체제가 그 잠금을 어떻게 보고 있는지를 같이 찍어 준다.
 이 문서 말을 믿을 필요 없이 직접 확인할 수 있다.
 
+### 다른 게 뭘 잡고 있는지
+
+"내 잠금이 걸려 있나"에 답해 주는 도구는 남의 잠금도 같이 보여 준다.
+그래서 `--doctor`가 그것도 보고한다. 이 글을 쓴 기계의 실제 출력이다.
+
+```
+  others holding a lock:
+    pid   366  powerd          3h02m  PreventUserIdleSystemSleep, InternalPreventDisplaySleep
+    pid 16638  caffeinate      3h01m  PreventUserIdleSystemSleep, PreventUserIdleDisplaySleep
+    pid   425  WindowServer    9m40s  UserIsActive
+    pid 39289  caffeinate      1m11s  PreventUserIdleSystemSleep
+```
+
+오래 잡은 것부터 나온다.
+화요일에 누가 켜 두고 잊은 `caffeinate -dis`를 알려 줄 만한 건 이 기계에 달리 없다.
+
+이 프로그램 자신의 잠금과 도우미는 빼고 보여 준다.
+도우미는 이름이 아니라 **누구를 대신해** 잡았는지로 알아본다.
+
+판정을 붙이는 건 딱 하나다.
+
+```
+    pid 16638  caffeinate      3h01m  PreventUserIdleSystemSleep
+      LEAKED: taken for pid 16577, which no longer exists - release it with: kill 16638
+```
+
+`caffeinate -w`는 누구를 기다리는지 기록해 둔다.
+그래서 그 대상이 죽어 있으면 그건 의심이 아니라 사실이다.
+
+**나이는 아니다.**
+처음 만들 때는 한 시간 넘은 걸 다 지적했다.
+그런데 처음 돌린 기계에서 macOS 자신의 `powerd`가 `PreventUserIdleSystemSleep`을 세 시간 잡고 있었다.
+powerd가 하는 일이 그거다.
+
+그 표시는 아무것도 알려 주지 않으면서 정작 중요한 줄들을 묻어 버렸다.
+그래서 지금은 지속 시간을 그냥 보여 주고 정렬만 한다.
+
+운영체제마다 말해 줄 수 있는 게 다르고, 출력이 그걸 숨기지 않는다.
+
+
+| 조회 명령                        | pid | 프로세스   | 지속시간 | 누구 대신 |
+| ------------------------------ | --- | --------- | ------- | ------- |
+| `pmset -g assertions`          | 있음 | 있음      | 있음     | 있음     |
+| `systemd-inhibit --list`       | 있음 | 있음      | 없음     | 없음     |
+| `powercfg /requests`           | 없음 | 경로만    | 없음     | 없음     |
+
+
+지속 시간이 없는 플랫폼에서는 그 칸을 비워 두지 않고 아예 없애고, 없다고 한 줄 적는다.
+Windows는 애초에 관리자 권한이 없으면 답을 안 하고 pid도 알려 주지 않는다.
+그래서 우리 도우미를 다른 PowerShell과 구분할 수 없다.
+
 ### 직접 확인하기
 
 ```sh

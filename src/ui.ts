@@ -9,6 +9,7 @@
 
 import type { CellBuffer } from './core/canvas.ts';
 import type { Battery } from './battery.ts';
+import { formatSpan } from './session.ts';
 import { hash2 } from './core/noise.ts';
 import { pack } from './core/color.ts';
 
@@ -18,17 +19,6 @@ const ACCENT = pack(0.4, 0.78, 0.92);
 const WARN = pack(0.95, 0.55, 0.35);
 const PANEL = pack(0.05, 0.06, 0.09);
 const ALARM = pack(0.45, 0.11, 0.05);
-
-/** A span for the status bar: widest unit first, two units at most. */
-export function formatSpan(seconds: number): string {
-  const total = Math.max(0, Math.floor(seconds));
-  const h = Math.floor(total / 3600);
-  const m = Math.floor((total % 3600) / 60);
-  const s = total % 60;
-  if (h > 0) return `${h}h${String(m).padStart(2, '0')}m`;
-  if (m > 0) return `${m}m${String(s).padStart(2, '0')}s`;
-  return `${s}s`;
-}
 
 /**
  * Everything drawn into the cell grid has to be one column wide.
