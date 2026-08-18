@@ -654,14 +654,18 @@ export class Awake {
   get label(): string {
     switch (this.state) {
       case 'holding':
+        // ASCII, and named rather than symbolic. A tick and an ellipsis are
+        // East Asian Ambiguous, which is two columns in a CJK-configured terminal,
+        // and the canvas is built on one character per cell. Naming the evidence is
+        // clearer than decorating it anyway.
         switch (this.evidence) {
           case 'os':
-            return 'awake✓';
+            return 'awake:os';
           case 'self-report':
-            return 'awake~';
+            return 'awake:self';
           // Running, and that is the whole of what we know.
           default:
-            return 'awake…';
+            return 'awake:live';
         }
       case 'off':
         return 'awake:off';

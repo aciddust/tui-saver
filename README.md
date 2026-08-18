@@ -82,7 +82,7 @@ and the man page says the assertion "is valid only when system is running on AC
 power" — so it silently does nothing on battery, which is exactly the case where
 someone shut the lid and walked off believing the machine would stay up.
 
-The charge is read once a minute and shown in the status bar: `bat 74%⚡` on mains,
+The charge is read once a minute and shown in the status bar: `bat 74% ac` on mains,
 `bat 74%` when it is going down. Below `--battery-floor` **while discharging**, the
 run warns for ten seconds and then releases the lock and exits — a machine at 12%
 in a bag is the one outcome nothing else here would have prevented.
@@ -130,10 +130,39 @@ silently without a login session — which is exactly the ssh case — so the qu
 rarely came up. Now it works, and keeping the wrong machine awake is something
 that can actually happen.
 
-The remaining blind spot is a **detached tmux session**: the animation carries on
-rendering into a pane nobody is looking at, and the lock stays held, which is the
-invisible-mode problem this program exists to avoid. `--for` is the answer for
-now.
+### When nobody is looking
+
+A tmux pane can hold a running animation nobody can see — the client detached, or
+it is simply on another window. That is this program's own failure mode reached
+from the inside: the lock is held and its indicator is not on any screen.
+
+Inside tmux, the time spent unseen is counted, and reported the moment somebody is
+there to read it:
+
+```
+held for 42m with nothing on screen - any key dismisses
+```
+
+Nothing is released and nothing is stopped. Detaching from a long job on purpose is
+a reasonable thing to do, and ending the run for it would be worse than the problem.
+`--for` remains the structural answer; this is the part that tells you it happened.
+
+Measured against tmux 3.7b, since which format variable to ask for is not obvious:
+
+
+|                        | `session_attached` | `window_active` | `pane_active` |
+| ---------------------- | ------------------ | --------------- | ------------- |
+| detached               | 0                  | 1               | 1             |
+| attached, other window | 1                  | 0               | 1             |
+| attached, our window   | 1                  | 1               | 1             |
+
+
+So the pair that matters is `session_attached` and `window_active`. `pane_active` is
+deliberately not consulted: a split pane that is not the active one is still on
+screen, and counting it as unseen would be wrong.
+
+Outside tmux there is no portable way to ask whether a window is visible, so
+nothing is claimed.
 
 ### Knowing it is really held
 
@@ -159,13 +188,13 @@ platforms:
 
 | label        | what it means                                                  |
 | ------------ | -------------------------------------------------------------- |
-| `awake✓`     | the OS itself reports the lock, recently                       |
-| `awake~`     | the watcher says it holds it; nobody independent has agreed    |
-| `awake…`     | the watcher is running, and that is the whole of what we know  |
-| `awake:FAIL` | not holding it                                                 |
+| `awake:os`   | the OS itself reports the lock, recently                       |
+| `awake:self` | the watcher says it holds it; nobody independent has agreed   |
+| `awake:live` | the watcher is running, and that is the whole of what we know |
+| `awake:FAIL` | not holding it                                                |
 
 
-`awake~` is what Windows gets. `powercfg /requests` will not print the request
+`awake:self` is what Windows gets. `powercfg /requests` will not print the request
 table without an Administrator prompt, and there is no unelevated way to ask
 Windows about an execution-state request — so instead the watcher re-asserts the
 flags on every wait iteration and prints a line each time that succeeds. Weaker
@@ -173,8 +202,8 @@ than the OS agreeing, far stronger than a live pid. It also replaced a fixed
 3.5-second delay: `--doctor` used to guess how long PowerShell needed to compile
 its P/Invoke shim before the lock existed to be asked about.
 
-`--require-awake` refuses to draw anything at all unless the lock reaches `awake✓`
-or `awake~`, which is what you want when wrapping work that must not be
+`--require-awake` refuses to draw anything at all unless the lock reaches `awake:os`
+or `awake:self`, which is what you want when wrapping work that must not be
 interrupted.
 
 `--doctor` holds the same lock, waits for the watcher to confirm it, and then

@@ -49,7 +49,7 @@ test('an answer from the OS earns a tick', async (t) => {
   );
   t.after(() => awake.stop());
   awake.start();
-  await until(() => awake.label === 'awake✓', 'the verified label');
+  await until(() => awake.label === 'awake:os', 'the verified label');
 });
 
 test("the watcher's own word is marked as exactly that", async (t) => {
@@ -59,14 +59,14 @@ test("the watcher's own word is marked as exactly that", async (t) => {
   );
   t.after(() => awake.stop());
   awake.start();
-  await until(() => awake.label === 'awake~', 'the self-reported label');
+  await until(() => awake.label === 'awake:self', 'the self-reported label');
 });
 
 test('a lock nobody can vouch for says so rather than claiming a tick', (t) => {
   const awake = new Awake(opts, backend());
   t.after(() => awake.stop());
   awake.start();
-  assert.equal(awake.label, 'awake…');
+  assert.equal(awake.label, 'awake:live');
 });
 
 test('the labels for off, unsupported and failed are unchanged', async (t) => {

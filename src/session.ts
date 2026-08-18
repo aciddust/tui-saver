@@ -89,3 +89,71 @@ export function remoteHost(env: Record<string, string | undefined>, hostname: st
   const label = hostname.split('.')[0]?.trim();
   return label ? label : null;
 }
+
+/**
+ * Whether anything is on screen at all, when running inside tmux.
+ *
+ * The lock being visible is this program's whole argument, and a tmux pane can
+ * hold a running animation nobody is looking at — the client detached, or it is on
+ * another window. That is the invisible mode this exists to avoid, arrived at from
+ * the inside.
+ *
+ * Measured against tmux 3.7b:
+ *
+ *                        session_attached  window_active  pane_active
+ *   detached                     0               1             1
+ *   attached, other window       1               0             1
+ *   attached, our window         1               1             1
+ *
+ * So the pair that matters is session_attached and window_active. `pane_active` is
+ * deliberately not consulted: a split pane that is not the active one is still on
+ * screen, and treating it as unseen would be wrong.
+ */
+export function tmuxVisibilityQuery(pane: string): { cmd: string; args: string[] } {
+  return {
+    cmd: 'tmux',
+    args: ['display-message', '-p', '-t', pane, '#{session_attached} #{window_active}'],
+  };
+}
+
+/** true watched, false unseen, null when tmux could not be asked. */
+export function parseTmuxVisibility(stdout: string): boolean | null {
+  const parts = stdout.trim().split(/\s+/);
+  if (parts.length !== 2) return null;
+  const [attached, windowActive] = parts.map(Number);
+  if (!Number.isFinite(attached) || !Number.isFinite(windowActive)) return null;
+  return attached > 0 && windowActive > 0;
+}
+
+export type Unseen = {
+  /** Whole seconds this run has spent with nothing of it on screen. */
+  unseen: number;
+  /** When the current unseen stretch began, or null when somebody is watching. */
+  since: number | null;
+};
+
+/**
+ * Folds one visibility reading into the running total.
+ *
+ * An unreadable answer closes the stretch rather than extending it. Not knowing
+ * whether anyone is looking is not evidence that nobody is, and the report this
+ * feeds is an accusation of sorts — better to undercount it than to invent it.
+ */
+export function unseenTick(state: Unseen, visible: boolean | null, now: number): Unseen {
+  if (visible === false) {
+    return state.since === null ? { unseen: state.unseen, since: now } : state;
+  }
+  if (state.since === null) return state;
+  return { unseen: state.unseen + Math.max(0, Math.round((now - state.since) / 1000)), since: null };
+}
+
+/**
+ * The number of unseen seconds worth telling someone about, or null.
+ *
+ * Only while somebody is actually watching: a warning drawn into a pane nobody is
+ * looking at is the same mistake it is warning about.
+ */
+export function unseenNotice(state: Unseen, minSeconds = 60): number | null {
+  if (state.since !== null) return null;
+  return state.unseen >= minSeconds ? state.unseen : null;
+}

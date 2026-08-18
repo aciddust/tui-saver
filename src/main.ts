@@ -7,6 +7,7 @@
  * scenes, and hand finished frames to the diffing writer.
  */
 
+import { execFile } from 'node:child_process';
 import { hostname } from 'node:os';
 
 import { Awake } from './awake.ts';
@@ -16,8 +17,18 @@ import { Canvas, makeCells, RAMPS, RENDER_MODES, type CellBuffer, type RenderMod
 import { PALETTES } from './core/color.ts';
 import type { Scene } from './core/scene.ts';
 import { detectColorDepth, Screen, supportsBraille } from './core/screen.ts';
-import { batteryGuard, extendLimit, remoteHost, sessionView } from './session.ts';
-import { dissolve, drawBanner, drawHelp, drawHud } from './ui.ts';
+import {
+  batteryGuard,
+  extendLimit,
+  parseTmuxVisibility,
+  remoteHost,
+  sessionView,
+  tmuxVisibilityQuery,
+  unseenNotice,
+  unseenTick,
+  type Unseen,
+} from './session.ts';
+import { dissolve, drawBanner, drawHelp, drawHud, formatSpan } from './ui.ts';
 
 /**
  * Turns a bad invocation into a message and an exit code. Parsing throws rather
@@ -100,6 +111,24 @@ async function main(): Promise<void> {
   // Read once: neither the hostname nor whether this is an ssh session changes
   // under a running process.
   const remote = remoteHost(process.env, hostname());
+  // Whether anything of this is on screen, where that is knowable. A tmux pane can
+  // hold a running animation nobody is looking at, which is the invisible mode this
+  // program exists to avoid, arrived at from the inside. Outside tmux there is no
+  // portable way to ask, so nothing is claimed.
+  let unseen: Unseen = { unseen: 0, since: null };
+  const pane = process.env.TMUX && process.env.TMUX_PANE ? process.env.TMUX_PANE : null;
+  if (pane) {
+    const query = tmuxVisibilityQuery(pane);
+    const pollVisible = (): void => {
+      execFile(query.cmd, query.args, { encoding: 'utf8' }, (err, stdout) => {
+        unseen = unseenTick(unseen, err ? null : parseTmuxVisibility(stdout), Date.now());
+      });
+    };
+    pollVisible();
+    const paneTimer = setInterval(pollVisible, 15_000);
+    paneTimer.unref();
+  }
+
   let battery: Battery | null = null;
   let batteryLowSince: number | null = null;
   // Polled regardless of --battery-floor: the charge is worth showing even when
@@ -221,6 +250,9 @@ async function main(): Promise<void> {
   }
 
   function onKey(key: string): void {
+    // A keypress is proof somebody is here, which is both the acknowledgement of
+    // the unseen notice and better evidence than the next poll would be.
+    if (unseen.unseen > 0) unseen = { unseen: 0, since: unseen.since };
     switch (key) {
       case 'q':
       case '\x03': // ctrl-c
@@ -367,13 +399,19 @@ async function main(): Promise<void> {
         alarmed = true;
         process.stdout.write('\x07');
       }
-      drawBanner(out, `NOT holding the sleep lock — ${awake.detail}`);
+      drawBanner(out, `NOT holding the sleep lock - ${awake.detail}`);
     } else {
       alarmed = false;
+      const unseenFor = unseenNotice(unseen);
       if (guard.secondsLeft !== null) {
         drawBanner(
           out,
-          `battery ${battery?.percent}% — releasing the sleep lock in ${guard.secondsLeft}s`,
+          `battery ${battery?.percent}% - releasing the sleep lock in ${guard.secondsLeft}s`,
+        );
+      } else if (unseenFor !== null) {
+        drawBanner(
+          out,
+          `held for ${formatSpan(unseenFor)} with nothing on screen - any key dismisses`,
         );
       }
     }

@@ -136,3 +136,77 @@ test('a hostname there is nothing to say about is not shown', () => {
   assert.equal(remoteHost({ SSH_CONNECTION: 'x' }, ''), null);
   assert.equal(remoteHost({ SSH_CONNECTION: '' }, 'box'), null);
 });
+
+import { parseTmuxVisibility, tmuxVisibilityQuery, unseenNotice, unseenTick } from '../src/session.ts';
+
+test('the visibility query asks about the window, not the pane', () => {
+  // Measured with tmux 3.7b: a split pane that is not the active one is still on
+  // screen, so pane_active would report a visible animation as unseen. What
+  // matters is whether our window is the one being displayed.
+  const args = tmuxVisibilityQuery('%3').args.join(' ');
+  assert.match(args, /session_attached/);
+  assert.match(args, /window_active/);
+  assert.doesNotMatch(args, /pane_active/);
+  assert.match(args, /%3/);
+});
+
+test('an attached client looking at our window is watching', () => {
+  assert.equal(parseTmuxVisibility('1 1\n'), true);
+});
+
+test('a detached session is not watching', () => {
+  assert.equal(parseTmuxVisibility('0 1\n'), false);
+});
+
+test('an attached client on another window is not watching either', () => {
+  assert.equal(parseTmuxVisibility('1 0\n'), false);
+});
+
+test('an answer we cannot read means we do not know, which is not an accusation', () => {
+  for (const bad of ['', 'no server running on /tmp/tmux-501/default', 'x y', '1']) {
+    assert.equal(parseTmuxVisibility(bad), null, JSON.stringify(bad));
+  }
+});
+
+const watched = { unseen: 0, since: null };
+
+test('a run somebody is watching accumulates nothing', () => {
+  assert.deepEqual(unseenTick(watched, true, 1000), { unseen: 0, since: null });
+});
+
+test('going unseen starts the clock without banking anything yet', () => {
+  assert.deepEqual(unseenTick(watched, false, 1000), { unseen: 0, since: 1000 });
+});
+
+test('the stretch is banked when somebody looks again', () => {
+  assert.deepEqual(unseenTick({ unseen: 0, since: 1000 }, true, 61_000), {
+    unseen: 60,
+    since: null,
+  });
+});
+
+test('stretches add up across a session', () => {
+  assert.deepEqual(unseenTick({ unseen: 60, since: 100_000 }, true, 130_000), {
+    unseen: 90,
+    since: null,
+  });
+});
+
+test('losing the ability to ask closes the stretch rather than counting forever', () => {
+  assert.deepEqual(unseenTick({ unseen: 0, since: 1000 }, null, 11_000), {
+    unseen: 10,
+    since: null,
+  });
+});
+
+test('a glance away is not worth reporting', () => {
+  assert.equal(unseenNotice({ unseen: 30, since: null }), null);
+});
+
+test('a long stretch is reported once somebody is there to read it', () => {
+  assert.equal(unseenNotice({ unseen: 90, since: null }), 90);
+});
+
+test('nothing is reported while still unseen, since nobody would see it', () => {
+  assert.equal(unseenNotice({ unseen: 90, since: 5000 }), null);
+});

@@ -30,6 +30,14 @@ export function formatSpan(seconds: number): string {
   return `${s}s`;
 }
 
+/**
+ * Everything drawn into the cell grid has to be one column wide.
+ *
+ * The canvas maps one character to one cell, so a wide or ambiguous-width
+ * character shifts everything after it and corrupts the row — seen in tmux as
+ * `awak✓ ff:unpin ?:elp q:q` after a bolt and a tick went into the status bar.
+ * Em dashes are ambiguous too, hence the plain hyphens in the messages here.
+ */
 export function drawText(
   cb: CellBuffer,
   x: number,
@@ -103,48 +111,61 @@ export type HudInfo = {
 export function drawHud(cb: CellBuffer, info: HudInfo): void {
   const y = cb.rows - 1;
   clearRow(cb, y, PANEL);
-  let x = 1;
-  x = drawText(cb, x, y, `${info.index + 1}/${info.count}`, DIM, PANEL);
-  x = drawText(cb, x, y, '  ', DIM, PANEL);
-  x = drawText(cb, x, y, info.title, BRIGHT, PANEL);
-  x = drawText(cb, x, y, `  ${info.mode}`, ACCENT, PANEL);
-  x = drawText(cb, x, y, `  ${info.palette}`, DIM, PANEL);
-  x = drawText(cb, x, y, `  ${info.fps.toFixed(0)}fps`, DIM, PANEL);
-  if (info.speed !== 1) x = drawText(cb, x, y, `  x${info.speed.toFixed(2)}`, ACCENT, PANEL);
-  if (info.paused) x = drawText(cb, x, y, '  PAUSED', WARN, PANEL);
-  if (info.sceneRemaining === null) x = drawText(cb, x, y, '  pinned', ACCENT, PANEL);
+
+  // Ordered by what a narrow terminal should keep. The bar outgrew the naive
+  // left-to-right approach: three segments were added, a 46-column pane overflowed,
+  // and the awake indicator — the one thing here that cannot be recovered by
+  // pressing a key — was the first casualty. So the segments say how much they
+  // matter, the indicator's space is reserved before any of them are drawn, and
+  // what falls off the end is decoration.
+  const segments: { text: string; fg: number }[] = [
+    { text: `${info.index + 1}/${info.count}`, fg: DIM },
+    { text: `  ${info.title}`, fg: BRIGHT },
+  ];
+  if (info.paused) segments.push({ text: '  PAUSED', fg: WARN });
   // With a limit, the countdown; without one, how long this has been up. The
   // second is the more important of the two: a lock held for four hours is worth
   // seeing even when nothing asked for it to stop.
   if (info.sessionRemaining !== null) {
     const soon = info.sessionRemaining <= 60;
-    x = drawText(cb, x, y, `  ${formatSpan(info.sessionRemaining)} left`, soon ? WARN : ACCENT, PANEL);
+    segments.push({ text: `  ${formatSpan(info.sessionRemaining)} left`, fg: soon ? WARN : ACCENT });
   } else {
-    x = drawText(cb, x, y, `  ${formatSpan(info.elapsed)}`, DIM, PANEL);
+    segments.push({ text: `  ${formatSpan(info.elapsed)}`, fg: DIM });
   }
-
-  // The pin toggle is worth naming on screen rather than burying in the help
-  // overlay: wanting to stop on the scene you are looking at is the first thing
-  // anyone reaches for, and a key you have to go find is a key you don't know
-  // exists. The label states what pressing it will do, not the current state.
   // Ahead of the battery and the clock, because it changes what those mean: they
   // describe the far machine, not this one.
-  if (info.remote) x = drawText(cb, x, y, `  ssh:${info.remote}`, WARN, PANEL);
-
+  if (info.remote) segments.push({ text: `  ssh:${info.remote}`, fg: WARN });
   if (info.battery) {
     // The charge earns its place here because the lock is the reason it is going
     // down: nothing else on this bar explains why the machine is not resting.
+    // 'ac' rather than a bolt: U+26A1 is East Asian Wide, always two columns, and
+    // one character per cell is the assumption the whole canvas rests on.
     const bat = info.battery;
-    const mark = bat.discharging ? '' : '⚡';
-    x = drawText(cb, x, y, `  bat ${bat.percent}%${mark}`, bat.discharging ? ACCENT : DIM, PANEL);
+    segments.push({
+      text: `  bat ${bat.percent}%${bat.discharging ? '' : ' ac'}`,
+      fg: bat.discharging ? ACCENT : DIM,
+    });
+  }
+  if (info.sceneRemaining === null) segments.push({ text: '  pinned', fg: ACCENT });
+  // Everything from here down is decoration and goes first.
+  segments.push({ text: `  ${info.mode}`, fg: ACCENT });
+  if (info.speed !== 1) segments.push({ text: `  x${info.speed.toFixed(2)}`, fg: ACCENT });
+  segments.push({ text: `  ${info.palette}`, fg: DIM });
+  segments.push({ text: `  ${info.fps.toFixed(0)}fps`, fg: DIM });
+
+  // Reserved first, drawn last.
+  const reserved = info.awake.length + 2;
+  let x = 1;
+  for (const segment of segments) {
+    if (x + segment.text.length > cb.cols - reserved) break;
+    x = drawText(cb, x, y, segment.text, segment.fg, PANEL);
   }
 
   const pinHint = info.sceneRemaining === null ? 'f:unpin' : 'f:pin';
   // Widest hint set that still clears the text on the left; a narrow terminal
   // drops to the shorter ones rather than overwriting the scene name.
-  // The last entry is empty: on a narrow terminal the awake indicator is the
-  // one thing here that cannot be recovered by pressing a key, so it keeps its
-  // place after every hint has been dropped.
+  // The last entry is empty: the awake indicator keeps its place after every hint
+  // has been dropped.
   const candidates = [
     `   ${pinHint}  n:next  ?:help  q:quit`,
     `   ${pinHint}  ?:help  q:quit`,
@@ -152,12 +173,10 @@ export function drawHud(cb: CellBuffer, info: HudInfo): void {
     `   ?:help`,
     '',
   ];
-  const hint = candidates.find((h) => cb.cols - (info.awake.length + h.length) - 1 > x + 1);
-  if (hint !== undefined) {
-    const rx = cb.cols - (info.awake.length + hint.length) - 1;
-    drawText(cb, rx, y, info.awake, info.awakeOk ? ACCENT : WARN, PANEL);
-    if (hint) drawText(cb, rx + info.awake.length, y, hint, DIM, PANEL);
-  }
+  const hint = candidates.find((h) => cb.cols - (info.awake.length + h.length) - 1 > x) ?? '';
+  const rx = Math.max(x, cb.cols - (info.awake.length + hint.length) - 1);
+  drawText(cb, rx, y, info.awake, info.awakeOk ? ACCENT : WARN, PANEL);
+  if (hint) drawText(cb, rx + info.awake.length, y, hint, DIM, PANEL);
 }
 
 const HELP: readonly string[] = [
