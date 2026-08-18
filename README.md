@@ -73,6 +73,48 @@ by a watcher cannot leak: the watcher notices the pid is gone, and if the watche
 itself is killed the OS drops the lock with the process. There is no path that
 leaves a machine permanently unable to sleep.
 
+### Knowing it is really held
+
+A running watcher is not proof. The request can be refused, or dropped by
+something outside this program, and the process looks identical either way. Three
+things stand between "we asked" and "it is held":
+
+- **The OS is asked again.** Every 90 seconds, with the platform's own tool —
+  `pmset -g assertions`, `systemd-inhibit --list`. An answer that no longer names
+  the lock fails the run even though the watcher is still alive. Being unable to
+  ask is treated differently from being told no: the answer goes stale rather
+  than becoming a failure.
+- **A watcher that dies is replaced.** Once. A watcher that cannot stay up is a
+  fact to report, not a spawn loop.
+- **Failure is not hideable.** The status bar can be hidden with `h` or never
+  shown at all with `--no-hud`; the warning across the top row cannot be, and the
+  bell rings once when the lock is lost. A run that stopped holding what it
+  promised exits 1 and says so on stderr.
+
+The status bar grades the evidence rather than implying one answer for all three
+platforms:
+
+
+| label        | what it means                                                  |
+| ------------ | -------------------------------------------------------------- |
+| `awake✓`     | the OS itself reports the lock, recently                       |
+| `awake~`     | the watcher says it holds it; nobody independent has agreed    |
+| `awake…`     | the watcher is running, and that is the whole of what we know  |
+| `awake:FAIL` | not holding it                                                 |
+
+
+`awake~` is what Windows gets. `powercfg /requests` will not print the request
+table without an Administrator prompt, and there is no unelevated way to ask
+Windows about an execution-state request — so instead the watcher re-asserts the
+flags on every wait iteration and prints a line each time that succeeds. Weaker
+than the OS agreeing, far stronger than a live pid. It also replaced a fixed
+3.5-second delay: `--doctor` used to guess how long PowerShell needed to compile
+its P/Invoke shim before the lock existed to be asked about.
+
+`--require-awake` refuses to draw anything at all unless the lock reaches `awake✓`
+or `awake~`, which is what you want when wrapping work that must not be
+interrupted.
+
 `--doctor` holds the same lock and then prints the platform's own view of it, so
 you never have to take this file's word for it.
 
@@ -85,7 +127,8 @@ node tools/check-awake.ts
 Static checks of all three platforms' watcher commands, then a live check on the
 current one: hold the lock against a throwaway process, ask the OS whether it is
 held, kill that process outright, and confirm the watcher lets go. **Run it once
-on each platform you ship to.**
+on each platform you ship to** — or let `.github/workflows/verify.yml` do it,
+which runs this tool on macOS, Windows and Linux runners on every push.
 
 On Windows the OS query (`powercfg /requests`) needs an Administrator prompt and
 is reported rather than failed — but the kill test, which is the load-bearing
@@ -97,14 +140,17 @@ one, needs no elevation anywhere.
 `pmset -g assertions`, and confirmed released after `kill -9`.
 
 **Windows** — implemented but **not executed by the author**, who had no Windows
-machine or PowerShell available. What *is* verified is everything checkable as
+machine or PowerShell available. CI now runs `tools/check-awake.ts` on a Windows
+runner; until that has gone green the job reports rather than gates. What *is* verified is everything checkable as
 data: the exact UTF-16LE bytes PowerShell receives, the here-string and brace
 structure, the flag values (`ES_CONTINUOUS|ES_SYSTEM_REQUIRED|ES_DISPLAY_REQUIRED`
 to hold, `ES_CONTINUOUS` alone to release), and that the release runs in a
 `finally`. Run `tools/check-awake.ts` on Windows before shipping.
 
 **Linux** — same caveat: implemented against `systemd-logind`, not executed. Needs
-`systemd-inhibit` on PATH, which desktop distributions have.
+`systemd-inhibit` on PATH, which desktop distributions have. Whether a GitHub
+runner — systemd present, no graphical login session — will grant the inhibitor
+is exactly what the CI job is there to find out.
 
 ### What none of them do
 
@@ -227,6 +273,7 @@ look
 
 staying awake
   --no-awake              hold no sleep lock at all
+  --require-awake         exit rather than run without a confirmed lock
   --defeat-screensaver    also declare synthetic user activity
   --doctor                report what the OS says about the lock
 ```
@@ -294,6 +341,7 @@ how many pixels a grid cell actually gets.
 ## Dev tools
 
 ```sh
+npm test          # node:test, no test dependency
 node tools/snap.ts <sceneId> [--t s] [--cols n] [--rows n] [--mode m] [--frames n]
 node tools/bench.ts [--cols n] [--rows n] [--frames n]
 node tools/soak.ts

@@ -521,10 +521,34 @@ export class Awake {
     }
   }
 
+  /**
+   * Waits for something better than liveness, or gives up. Used by
+   * --require-awake, where "the spawn returned" is not an answer: the Windows
+   * watcher has to compile a P/Invoke shim before it can take the lock, so it
+   * looks identical to a working one for the first second or two.
+   */
+  async confirm(timeoutMs = 5000): Promise<AwakeEvidence> {
+    const deadline = Date.now() + timeoutMs;
+    while (Date.now() < deadline) {
+      const now = this.evidence;
+      if (now === 'os' || now === 'self-report' || now === 'none') return now;
+      await new Promise((r) => setTimeout(r, 25));
+    }
+    return this.evidence;
+  }
+
   get label(): string {
     switch (this.state) {
       case 'holding':
-        return 'awake';
+        switch (this.evidence) {
+          case 'os':
+            return 'awake✓';
+          case 'self-report':
+            return 'awake~';
+          // Running, and that is the whole of what we know.
+          default:
+            return 'awake…';
+        }
       case 'off':
         return 'awake:off';
       case 'unsupported':

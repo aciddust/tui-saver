@@ -13,7 +13,7 @@ import { Canvas, makeCells, RAMPS, RENDER_MODES, type CellBuffer, type RenderMod
 import { PALETTES } from './core/color.ts';
 import type { Scene } from './core/scene.ts';
 import { detectColorDepth, Screen, supportsBraille } from './core/screen.ts';
-import { dissolve, drawHelp, drawHud } from './ui.ts';
+import { dissolve, drawBanner, drawHelp, drawHud } from './ui.ts';
 
 /**
  * Turns a bad invocation into a message and an exit code. Parsing throws rather
@@ -40,6 +40,21 @@ async function main(): Promise<void> {
   }
   const awake = new Awake({ enabled: opts.awake, defeatScreensaver: opts.defeatScreensaver });
   awake.start();
+
+  // Asked to guarantee the lock, wait for something better than "the spawn
+  // returned" before drawing anything. A watcher that will fail has usually
+  // failed by now, and on Windows the shim it compiles first makes a working
+  // watcher indistinguishable from a broken one for the first second or two.
+  if (opts.requireAwake) {
+    const evidence = await awake.confirm();
+    if (evidence !== 'os' && evidence !== 'self-report') {
+      awake.stop();
+      process.stderr.write(
+        `--require-awake: could not confirm the sleep lock — ${awake.detail || `only ${evidence}`}\n`,
+      );
+      process.exit(1);
+    }
+  }
 
   const isTty = process.stdout.isTTY === true;
   let cols = Math.max(20, process.stdout.columns ?? 100);
@@ -76,6 +91,8 @@ async function main(): Promise<void> {
   let showHud = opts.hud;
   let showHelp = false;
 
+  // One bell per transition into failure, not one per frame.
+  let alarmed = false;
   let index = 0;
   let curT = 0;
   let outgoing: Scene | null = null;
@@ -142,6 +159,13 @@ async function main(): Promise<void> {
 
   const quit = (code = 0): void => {
     cleanup();
+    if (awake.everFailed) {
+      // Said after leaving the alternate screen, where it survives being read.
+      process.stderr.write(
+        `tui-saver: the sleep lock was not held for part of this run — ${awake.detail}\n`,
+      );
+      process.exit(1);
+    }
     process.exit(code);
   };
 
@@ -287,6 +311,15 @@ async function main(): Promise<void> {
         awakeOk: awake.state === 'holding' || awake.state === 'off',
       });
     }
+    if (awake.state === 'failed') {
+      if (!alarmed) {
+        alarmed = true;
+        process.stdout.write('\x07');
+      }
+      drawBanner(out, `NOT holding the sleep lock — ${awake.detail}`);
+    } else {
+      alarmed = false;
+    }
     if (showHelp) drawHelp(out);
 
     screen.flush(out);
@@ -300,8 +333,10 @@ async function main(): Promise<void> {
     renderScene(playlist[0], canvases[0], 0, 1 / opts.fps, cellsCur);
     screen.flush(cellsCur);
     process.stdout.write('\n');
-    cleanup();
-    return;
+    // A watcher that cannot be launched at all reports it on the next tick, and
+    // this path is otherwise short enough to finish before hearing about it.
+    await new Promise((resolve) => setImmediate(resolve));
+    quit(0);
   }
 
   frame();
