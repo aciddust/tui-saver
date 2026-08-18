@@ -105,3 +105,17 @@ test('confirming gives up rather than hanging when nothing can ever vouch', asyn
 
   assert.equal(await awake.confirm(150), 'liveness');
 });
+
+test('a watcher that dies is not waited out — failure is detected by death, not by clock', async (t) => {
+  // Why the default timeout can afford to be generous: the only case that ever
+  // reaches it is a watcher that is alive and silent. On Windows that means
+  // Add-Type is still compiling the P/Invoke shim, which is not a failure and on a
+  // loaded CI runner took longer than ten seconds.
+  const awake = new Awake(opts, backend({}, ['-e', '']));
+  t.after(() => awake.stop());
+  awake.start();
+
+  const started = Date.now();
+  assert.equal(await awake.confirm(), 'none');
+  assert.ok(Date.now() - started < 3000, `returned in ${Date.now() - started}ms`);
+});

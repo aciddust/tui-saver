@@ -656,8 +656,15 @@ export class Awake {
    * --require-awake, where "the spawn returned" is not an answer: the Windows
    * watcher has to compile a P/Invoke shim before it can take the lock, so it
    * looks identical to a working one for the first second or two.
+   *
+   * The timeout is generous because it costs nothing in the case that matters. A
+   * watcher that is going to fail dies, and death is reported at once — evidence
+   * drops to 'none' and this returns. The only run that ever reaches the deadline
+   * is one whose watcher is alive and silent, which on Windows means Add-Type is
+   * still compiling. Five seconds used to be the limit, and a loaded CI runner took
+   * longer than ten: the wait was a guess about someone else's machine.
    */
-  async confirm(timeoutMs = 5000): Promise<AwakeEvidence> {
+  async confirm(timeoutMs = 20_000): Promise<AwakeEvidence> {
     const deadline = Date.now() + timeoutMs;
     while (Date.now() < deadline) {
       const now = this.evidence;
