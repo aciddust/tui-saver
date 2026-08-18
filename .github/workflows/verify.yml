@@ -122,4 +122,47 @@ jobs:
           [void][Hold]::SetThreadExecutionState([uint32]2147483651)
           powercfg /requests
           [void][Hold]::SetThreadExecutionState([uint32]2147483648)
+
+          Write-Output '--- does SendKeys {F15} actually move the idle timer? ---'
+          # --defeat-screensaver claims to hold the screen saver off by declaring
+          # synthetic user activity. What decides whether that is true is
+          # GetLastInputInfo: the screen saver runs off it, so if the pulse does not
+          # move it, the flag does nothing at all on this platform.
+          Add-Type -TypeDefinition @'
+          using System;
+          using System.Runtime.InteropServices;
+          public static class Idle {
+            [StructLayout(LayoutKind.Sequential)]
+            public struct LASTINPUTINFO { public uint cbSize; public uint dwTime; }
+            [DllImport("user32.dll")]
+            public static extern bool GetLastInputInfo(ref LASTINPUTINFO plii);
+            public static uint LastInput() {
+              LASTINPUTINFO i = new LASTINPUTINFO();
+              i.cbSize = (uint)Marshal.SizeOf(i);
+              GetLastInputInfo(ref i);
+              return i.dwTime;
+            }
+          }
+          '@
+          $before = [Idle]::LastInput()
+          Write-Output "  before          $before"
+          Start-Sleep -Seconds 3
+          $idled = [Idle]::LastInput()
+          Write-Output "  after 3s idle   $idled  (unchanged means nothing else is generating input)"
+          try {
+            $shell = New-Object -ComObject WScript.Shell
+            Write-Output '  WScript.Shell   created'
+            $shell.SendKeys('{F15}')
+            Write-Output '  SendKeys        returned without throwing'
+          } catch {
+            Write-Output "  SendKeys        THREW: $($_.Exception.Message)"
+          }
+          Start-Sleep -Milliseconds 500
+          $after = [Idle]::LastInput()
+          Write-Output "  after the pulse $after"
+          if ($after -gt $idled) {
+            Write-Output '  VERDICT         the pulse moved the idle timer'
+          } else {
+            Write-Output '  VERDICT         the pulse did NOT move the idle timer'
+          }
           exit 0
