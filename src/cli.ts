@@ -44,6 +44,11 @@ export type Options = {
    * flat laptop in a bag, and machines with no battery are unaffected.
    */
   batteryFloor: number;
+  /**
+   * A pid to hold the lock for. The run ends when it exits, which is the reason
+   * anybody turns a keep-awake on in the first place.
+   */
+  whilePid: number | null;
 };
 
 export const DEFAULTS: Options = {
@@ -64,6 +69,7 @@ export const DEFAULTS: Options = {
   braille: null,
   sessionSeconds: null,
   batteryFloor: 15,
+  whilePid: null,
 };
 
 /** A bad invocation. Carries the exit code so the caller need not invent one. */
@@ -128,6 +134,7 @@ playback
   --shuffle               randomise the playlist order
   --for <90m|2h|1h30m>    end the whole run after this long
   --until <HH:MM>         end the whole run at this time of day
+  --while <pid>           end the whole run when that process exits
 
 look
   --mode <braille|half|ascii>   force a render mode for every scene
@@ -281,6 +288,15 @@ export function parseArgs(argv: string[]): { opts: Options; exit?: () => Promise
       case '--require-awake':
         opts.requireAwake = true;
         break;
+      case '--while': {
+        const v = num(need(i, a), a);
+        if (!Number.isInteger(v) || v < 1) {
+          throw new CliError(`${a}: expected a pid, got ${need(i, a)}`);
+        }
+        opts.whilePid = v;
+        i++;
+        break;
+      }
       case '--battery-floor': {
         const v = num(need(i, a), a);
         // Not clamped: clamping turns a typo into a policy without saying so.

@@ -91,3 +91,25 @@ test('--for 0 is rejected rather than quietly ending the run at once', () => {
     return true;
   });
 });
+
+test('there is nothing to wait for unless a pid is given', () => {
+  assert.equal(parseArgs([]).opts.whilePid, null);
+});
+
+test('--while takes the pid to wait for', () => {
+  assert.equal(parseArgs(['--while', '4242']).opts.whilePid, 4242);
+});
+
+test('a pid that is not one is rejected', () => {
+  for (const bad of ['0', '-1', 'abc', '1.5', '']) {
+    assert.throws(() => parseArgs(['--while', bad]), CliError, `should reject ${JSON.stringify(bad)}`);
+  }
+});
+
+test('--while and --for both bound the run and may be given together', () => {
+  // Unlike caffeinate, where -t and -w are both silently discarded the moment a
+  // utility is named. Whichever comes first should end the run; neither is dropped.
+  const { opts } = parseArgs(['--while', '4242', '--for', '90m']);
+  assert.equal(opts.whilePid, 4242);
+  assert.equal(opts.sessionSeconds, 5400);
+});

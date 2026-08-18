@@ -210,3 +210,17 @@ test('a long stretch is reported once somebody is there to read it', () => {
 test('nothing is reported while still unseen, since nobody would see it', () => {
   assert.equal(unseenNotice({ unseen: 90, since: 5000 }), null);
 });
+
+import { targetGone } from '../src/session.ts';
+
+test('with nothing to wait for, nothing is ever gone', () => {
+  assert.equal(targetGone(null, () => false), false);
+});
+
+test('a live target keeps the run going', () => {
+  assert.equal(targetGone(4242, () => true), false);
+});
+
+test('a target that has exited ends the run', () => {
+  assert.equal(targetGone(4242, () => false), true);
+});
