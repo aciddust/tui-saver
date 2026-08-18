@@ -6,7 +6,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 
-import { Awake, type Backend } from '../src/awake.ts';
+import { Awake, ERROR_MARKER, type Backend } from '../src/awake.ts';
 
 /** A watcher that stays up until it is killed. */
 const sleeper: Backend = {
@@ -87,4 +87,47 @@ test('a watcher that dies says why, when it said anything at all', async (t) => 
 
   await until(() => awake.state === 'failed', 'the failed state');
   assert.match(awake.detail, /Failed to inhibit: no session/);
+});
+
+test("a watcher's own error report is preferred over whatever it wrote to stderr", async (t) => {
+  // PowerShell always writes "#< CLIXML" to a redirected stderr, so a reason taken
+  // from stderr would be that, every time, on the one platform that has no other
+  // way to explain itself.
+  const speaking: Backend = {
+    ...sleeper,
+    command: () => ({
+      cmd: process.execPath,
+      args: [
+        '-e',
+        `process.stderr.write('#< CLIXML\\n');` +
+          `process.stdout.write('${ERROR_MARKER} Add-Type could not compile the shim\\n');` +
+          `process.exit(1)`,
+      ],
+      opts: { stdio: ['ignore', 'pipe', 'pipe'] },
+    }),
+  };
+  const awake = new Awake({ enabled: true, defeatScreensaver: false }, speaking);
+  t.after(() => awake.stop());
+  awake.start();
+
+  await until(() => awake.state === 'failed', 'the failed state');
+  assert.match(awake.detail, /Add-Type could not compile the shim/);
+  assert.doesNotMatch(awake.detail, /CLIXML/);
+});
+
+test('CLIXML noise on its own is not offered as a reason', async (t) => {
+  const noisy: Backend = {
+    ...sleeper,
+    command: () => ({
+      cmd: process.execPath,
+      args: ['-e', "process.stderr.write('#< CLIXML\\n<Objs/>\\n'); process.exit(1)"],
+      opts: { stdio: ['ignore', 'ignore', 'pipe'] },
+    }),
+  };
+  const awake = new Awake({ enabled: true, defeatScreensaver: false }, noisy);
+  t.after(() => awake.stop());
+  awake.start();
+
+  await until(() => awake.state === 'failed', 'the failed state');
+  assert.doesNotMatch(awake.detail, /CLIXML|Objs/);
 });

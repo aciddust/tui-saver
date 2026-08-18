@@ -235,13 +235,21 @@ Windows에서는 잠금 조회(`powercfg /requests`)에 관리자 권한이 필�
 
 ### 운영체제별 상태
 
+세 운영체제 모두 이제 push할 때마다 CI가 확인한다. 이 문서가 원래 하던 말과 달라진 부분이다.
+
 **macOS는 확인을 마쳤다.**
 `pmset -g assertions`로 잠금 세 개가 걸린 것을 확인했고, `kill -9` 뒤에 풀리는 것도 확인했다.
 
-**Windows는 코드만 있고 실행해 보지 못했다.**
-작성자에게 Windows 머신도 PowerShell도 없었다.
-지금은 CI가 Windows 러너에서 `tools/check-awake.ts`를 돌린다.
-한 번 통과하는 걸 볼 때까지는 실패로 처리하지 않고 결과만 보고한다.
+**Windows도 확인을 마쳤다.**
+
+작성자에게 Windows 머신도 PowerShell도 없어서 눈으로만 짠 코드였다.
+지금은 Windows 러너가 실제로 실행하고, `powercfg /requests`로 요청 목록까지 확인한다.
+러너가 관리자 권한으로 도는 덕이다.
+
+읽어서는 절대 못 찾을 것도 하나 나왔다.
+PowerShell은 리다이렉트된 stderr를 CLIXML로 직렬화한다.
+그래서 실패 이유를 stderr에서 읽으면 `#< CLIXML` 한 줄만 온다.
+지금은 watcher가 stdout으로 이유를 보고한다.
 
 대신 실행하지 않고도 확인되는 건 전부 확인했다.
 PowerShell에 넘기는 바이트열, 따옴표와 중괄호 짝, 플래그 값을 봤다.
