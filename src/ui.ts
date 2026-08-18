@@ -94,6 +94,8 @@ export type HudInfo = {
   battery: Battery | null;
   /** The host being kept awake, when it is not the one being typed at. */
   remote: string | null;
+  /** The pid this run is waiting for, when there is one. */
+  whilePid: number | null;
   awake: string;
   awakeOk: boolean;
 };
@@ -122,6 +124,8 @@ export function drawHud(cb: CellBuffer, info: HudInfo): void {
   } else {
     segments.push({ text: `  ${formatSpan(info.elapsed)}`, fg: DIM });
   }
+  // Why this is running at all, which outranks anything else describing it.
+  if (info.whilePid !== null) segments.push({ text: `  while:${info.whilePid}`, fg: ACCENT });
   // Ahead of the battery and the clock, because it changes what those mean: they
   // describe the far machine, not this one.
   if (info.remote) segments.push({ text: `  ssh:${info.remote}`, fg: WARN });

@@ -171,3 +171,29 @@ export function unseenNotice(state: Unseen, minSeconds = 60): number | null {
   if (state.since !== null) return null;
   return state.unseen >= minSeconds ? state.unseen : null;
 }
+
+/**
+ * Whether the process this run was taken out for has finished.
+ *
+ * The honest reason anybody holds a sleep lock is that something is running.
+ * `caffeinate -w` is the right tool for that and nobody reaches for it, partly
+ * because its own rules discard it without a word the moment a utility is named.
+ * Tying the lock's lifetime to the work makes forgetting to turn it off impossible
+ * rather than merely visible.
+ */
+/**
+ * Whether a pid exists, without signalling it. Signal 0 checks for existence on
+ * every platform Node supports.
+ */
+export function pidAlive(pid: number): boolean {
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+export function targetGone(pid: number | null, isAlive: (pid: number) => boolean): boolean {
+  return pid !== null && !isAlive(pid);
+}

@@ -22,8 +22,10 @@ import {
   extendLimit,
   formatSpan,
   parseTmuxVisibility,
+  pidAlive,
   remoteHost,
   sessionView,
+  targetGone,
   tmuxVisibilityQuery,
   unseenNotice,
   unseenTick,
@@ -56,6 +58,13 @@ async function main(): Promise<void> {
   }
   const awake = new Awake({ enabled: opts.awake, defeatScreensaver: opts.defeatScreensaver });
   awake.start();
+
+  if (opts.whilePid !== null && !pidAlive(opts.whilePid)) {
+    process.stderr.write(
+      `--while: pid ${opts.whilePid} is not running, so there would be nothing to wait for\n`,
+    );
+    process.exit(2);
+  }
 
   // Asked to guarantee the lock, wait for something better than "the spawn
   // returned" before drawing anything. A watcher that will fail has usually
@@ -130,6 +139,7 @@ async function main(): Promise<void> {
     paneTimer.unref();
   }
 
+  let lastTargetCheck = 0;
   let battery: Battery | null = null;
   let batteryLowSince: number | null = null;
   // Polled regardless of --battery-floor: the charge is worth showing even when
@@ -358,6 +368,16 @@ async function main(): Promise<void> {
       return;
     }
 
+    // Polled rather than checked every frame: a syscall thirty times a second to
+    // answer a question that changes once.
+    if (opts.whilePid !== null && Date.now() - lastTargetCheck > 500) {
+      lastTargetCheck = Date.now();
+      if (targetGone(opts.whilePid, pidAlive)) {
+        quit(0, `pid ${opts.whilePid} exited - released the sleep lock`);
+        return;
+      }
+    }
+
     const guard = batteryGuard(battery, opts.batteryFloor, batteryLowSince, Date.now());
     batteryLowSince = guard.lowSince;
     if (guard.stop) {
@@ -391,6 +411,7 @@ async function main(): Promise<void> {
         sessionRemaining: session.remaining,
         battery,
         remote,
+        whilePid: opts.whilePid,
         awake: awake.label,
         awakeOk: awake.state === 'holding' || awake.state === 'off',
       });
