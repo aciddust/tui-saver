@@ -36,6 +36,16 @@ export type AwakeState = 'off' | 'holding' | 'unsupported' | 'failed';
  */
 export const HELD_MARKER = 'tui-saver:held';
 
+/**
+ * What a watcher prints on stdout, followed by a message, when it is giving up.
+ *
+ * Windows needs this because stderr cannot carry a reason there: PowerShell
+ * serialises a redirected stderr as CLIXML, whose first line is always
+ * "#< CLIXML", so a failure read from it says nothing at all. Reporting on stdout
+ * keeps the message intact.
+ */
+export const ERROR_MARKER = 'tui-saver:error';
+
 export type AwakeOptions = {
   /** Hold the sleep lock at all. */
   enabled: boolean;
@@ -197,6 +207,9 @@ function windowsScript(pid: number, pulse: boolean): string {
     // watcher to die immediately so the parent notices and the status bar reads
     // awake:FAIL, rather than limping on holding nothing.
     `$ErrorActionPreference = 'Stop'`,
+    // Everything is inside the try, Add-Type included: compiling the shim is the
+    // likeliest thing to fail here, and it happens before the loop is entered.
+    `try {`,
     `Add-Type -TypeDefinition @'`,
     `using System;`,
     `using System.Runtime.InteropServices;`,
@@ -216,22 +229,28 @@ function windowsScript(pid: number, pulse: boolean): string {
     // security tool scanning it — should find no input-injection code at all
     // unless --defeat-screensaver actually asked for it.
     ...(pulse ? [`$shell = New-Object -ComObject WScript.Shell`] : []),
-    `try {`,
-    `  while ($true) {`,
+    `  try {`,
+    `    while ($true) {`,
     // Returns as soon as the pid exits, or after 45s — so release is prompt and
     // the pulse cadence comes for free from the same wait.
-    `    Wait-Process -Id ${pid} -Timeout 45 -ErrorAction SilentlyContinue`,
-    `    if (-not (Get-Process -Id ${pid} -ErrorAction SilentlyContinue)) { break }`,
+    `      Wait-Process -Id ${pid} -Timeout 45 -ErrorAction SilentlyContinue`,
+    `      if (-not (Get-Process -Id ${pid} -ErrorAction SilentlyContinue)) { break }`,
     // Re-asserting the same flags is a no-op the OS is happy to repeat, and it
     // turns the wait loop into a heartbeat: the parent learns the request is
     // still real without needing the elevated prompt powercfg would want.
-    `    $r = [Awake]::SetThreadExecutionState([uint32]${HOLD})`,
-    `    if ($r -eq 0) { throw 'SetThreadExecutionState refused the request' }`,
-    `    Write-Output '${HELD_MARKER}'`,
-    ...(pulse ? [`    $shell.SendKeys('{F15}')`] : []),
+    `      $r = [Awake]::SetThreadExecutionState([uint32]${HOLD})`,
+    `      if ($r -eq 0) { throw 'SetThreadExecutionState refused the request' }`,
+    `      Write-Output '${HELD_MARKER}'`,
+    ...(pulse ? [`      $shell.SendKeys('{F15}')`] : []),
+    `    }`,
+    `  } finally {`,
+    `    [void][Awake]::SetThreadExecutionState([uint32]${RELEASE})`,
     `  }`,
-    `} finally {`,
-    `  [void][Awake]::SetThreadExecutionState([uint32]${RELEASE})`,
+    // Reported on stdout, not stderr: PowerShell serialises a redirected stderr
+    // as CLIXML, so a reason read from there arrives as "#< CLIXML".
+    `} catch {`,
+    `  Write-Output "${ERROR_MARKER} $($_.Exception.Message)"`,
+    `  exit 1`,
     `}`,
   ].join('\n');
 }
@@ -364,8 +383,10 @@ export class Awake {
   /** When the OS last confirmed the lock, or null if it never has. */
   lastVerifiedAt: number | null = null;
   private lastHeartbeatAt: number | null = null;
-  /** The watcher's first line of complaint, if it made one. */
+  /** The watcher's first usable line of stderr, if it made one. */
   private lastStderr = '';
+  /** What the watcher said about itself on stdout, which beats guessing. */
+  private reported = '';
   private verifyTimer: NodeJS.Timeout | null = null;
   private child: ChildProcess | null = null;
   private stopPulse: (() => void) | null = null;
@@ -461,6 +482,7 @@ export class Awake {
       const child = spawn(cmd, args, opts);
       this.child = child;
       this.lastStderr = '';
+      this.reported = '';
       this.readHeartbeat(child);
       this.readComplaint(child);
       child.on('error', (err: Error) => {
@@ -480,7 +502,9 @@ export class Awake {
           this.launch();
           return;
         }
-        const said = this.lastStderr ? `: ${this.lastStderr}` : '';
+        // The watcher's own account first; stderr only if it did not give one.
+        const reason = this.reported || this.lastStderr;
+        const said = reason ? `: ${reason}` : '';
         this.fail(
           `watcher exited early (code ${code}${signal ? `, ${signal}` : ''})${said}`,
         );
@@ -513,8 +537,12 @@ export class Awake {
       pending += chunk;
       const lines = pending.split('\n');
       pending = lines.pop() ?? '';
-      for (const line of lines) {
-        if (line.trim() === HELD_MARKER) this.lastHeartbeatAt = Date.now();
+      for (const raw of lines) {
+        const line = raw.trim();
+        if (line === HELD_MARKER) this.lastHeartbeatAt = Date.now();
+        else if (line.startsWith(ERROR_MARKER)) {
+          this.reported = line.slice(ERROR_MARKER.length).trim();
+        }
       }
     });
     out.on('error', () => {
@@ -533,7 +561,12 @@ export class Awake {
     err.setEncoding('utf8');
     err.on('data', (chunk: string) => {
       if (this.lastStderr) return;
-      const line = chunk.split('\n').map((l) => l.trim()).find(Boolean);
+      const line = chunk
+        .split('\n')
+        .map((l) => l.trim())
+        // PowerShell prefixes a redirected stderr with a CLIXML envelope. None of
+        // it is a message, and taking the first line would take that every time.
+        .find((l) => l && !l.startsWith('#<') && !l.startsWith('<'));
       if (line) this.lastStderr = line.slice(0, 200);
     });
     err.on('error', () => {

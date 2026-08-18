@@ -36,19 +36,17 @@ jobs:
     # throwaway process, asks the OS whether it is held, then SIGKILLs the target
     # and confirms the watcher lets go.
     #
-    # macOS is confirmed working and gates the build. Windows and Linux are
-    # implemented but were never executed by the author, so they report rather
-    # than fail until a green run here proves otherwise — a red X on code nobody
-    # has ever run tells us nothing we did not already write in the README.
-    # Once a platform goes green, drop it from the continue-on-error expression
-    # so it starts gating like macOS does.
+    # All three gate the build. They did not start that way: Windows and Linux
+    # had never been executed by anyone, so they reported instead of failing until
+    # a green run proved they worked. Both have now gone green — and Linux only
+    # after this found that it was asking logind for an inhibitor that a machine
+    # with no login session refuses outright, holding nothing at all.
     name: awake (${{ matrix.os }})
     strategy:
       fail-fast: false
       matrix:
         os: [macos-latest, ubuntu-latest, windows-latest]
     runs-on: ${{ matrix.os }}
-    continue-on-error: ${{ matrix.os != 'macos-latest' }}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4

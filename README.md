@@ -180,12 +180,18 @@ one, needs no elevation anywhere.
 
 ### Platform status
 
-**macOS** — verified here. All three assertions confirmed held via
-`pmset -g assertions`, and confirmed released after `kill -9`.
+All three are now verified by CI on every push, which is a change from how this
+file used to read.
 
-**Windows** — implemented but **not executed by the author**, who had no Windows
-machine or PowerShell available. CI now runs `tools/check-awake.ts` on a Windows
-runner; until that has gone green the job reports rather than gates. What *is* verified is everything checkable as
+**macOS** — verified. Assertions confirmed held via `pmset -g assertions`, and
+confirmed released after `kill -9`.
+
+**Windows** — verified. The author had no Windows machine, so this was written
+blind and checked as data; a Windows runner now executes it, and `powercfg
+/requests` confirms the request table on a runner that happens to be elevated. It
+also turned up something no amount of reading would have: PowerShell serialises a
+redirected stderr as CLIXML, so a failure reason taken from there arrives as
+"#< CLIXML" and nothing else. The watcher reports on stdout instead. What *is* verified is everything checkable as
 data: the exact UTF-16LE bytes PowerShell receives, the here-string and brace
 structure, the flag values (`ES_CONTINUOUS|ES_SYSTEM_REQUIRED|ES_DISPLAY_REQUIRED`
 to hold, `ES_CONTINUOUS` alone to release), and that the release runs in a

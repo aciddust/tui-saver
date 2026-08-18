@@ -6,7 +6,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 
-import { HELD_MARKER, watcherCommandFor } from '../src/awake.ts';
+import { ERROR_MARKER, HELD_MARKER, watcherCommandFor } from '../src/awake.ts';
 
 function windowsScript(pulse = false): string {
   const cmd = watcherCommandFor('win32', 4242, pulse);
@@ -46,4 +46,21 @@ test('both output streams are kept: one announces, the other explains', () => {
 test('releasing still happens in a finally block', () => {
   assert.match(windowsScript(), /finally \{/);
   assert.match(windowsScript(), /SetThreadExecutionState\(\[uint32\]2147483648\)/);
+});
+
+test('the watcher reports its own failure on stdout, where CLIXML cannot reach it', () => {
+  // PowerShell serialises stderr as CLIXML the moment it is redirected: the first
+  // line is always "#< CLIXML", so stderr is useless as a reason. CI showed this.
+  const s = windowsScript();
+  assert.match(s, new RegExp(`Write-Output "${ERROR_MARKER}`));
+  assert.match(s, /catch \{/);
+});
+
+test('setup failures are caught, not just the wait loop', () => {
+  // Add-Type compiling the shim is the most likely thing to fail, and it happens
+  // before the loop is ever entered.
+  const s = windowsScript();
+  const tryAt = s.indexOf('try {');
+  const addTypeAt = s.indexOf('Add-Type');
+  assert.ok(tryAt >= 0 && addTypeAt > tryAt, 'Add-Type must be inside the try');
 });
