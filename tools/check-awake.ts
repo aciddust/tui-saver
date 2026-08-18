@@ -134,18 +134,23 @@ if (!mine) {
     // when it is ready, so this waits for that and no longer.
     const deadline = Date.now() + 10_000;
     while (!reported && Date.now() < deadline) await sleep(100);
-    check(reported, `watcher reported holding the lock ("${HELD_MARKER}")`);
   } else {
     await sleep(500);
   }
   check(spawnError === null, 'watcher launched', spawnError ?? '');
   const watcherPid = watcher.pid;
   check(watcherPid !== undefined && alive(watcherPid), `watcher running (pid ${watcherPid})`);
-  if (complaint.trim()) {
+  if (reports) check(reported, `watcher reported holding the lock ("${HELD_MARKER}")`);
+  // PowerShell wraps a redirected stderr in a CLIXML envelope whether or not it
+  // has anything to say, so printing that raw makes a clean run look as if the
+  // watcher complained. Only the message lines are worth showing.
+  const said = complaint
+    .split('\n')
+    .map((l) => l.trim())
+    .filter((l) => l && !l.startsWith('#<') && !l.startsWith('<'));
+  if (said.length > 0) {
     process.stdout.write('       it said:\n');
-    for (const line of complaint.trim().split('\n').slice(0, 8)) {
-      process.stdout.write(`         ${line.trim()}\n`);
-    }
+    for (const line of said.slice(0, 8)) process.stdout.write(`         ${line}\n`);
   }
 
   // Ask the OS, where we can. On Windows this needs elevation and is reported
