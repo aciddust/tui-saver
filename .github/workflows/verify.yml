@@ -57,3 +57,38 @@ jobs:
       # No npm ci: this tool imports src/awake.ts and nothing else, and running
       # it without the devDependencies proves the program itself needs none.
       - run: node tools/check-awake.ts
+
+  probe-linux:
+    # Diagnosis, not a check: run by hand when the question "why can this runner
+    # not take an inhibitor?" comes up. `awake (ubuntu-latest)` fails with
+    # "Failed to inhibit: Access denied", and which of logind's polkit actions is
+    # being refused decides whether that is a bug here or an environment with
+    # nothing to inhibit in the first place.
+    if: github.event_name == 'workflow_dispatch'
+    name: probe (linux inhibitor permissions)
+    runs-on: ubuntu-latest
+    steps:
+      - name: who are we, and what will logind allow
+        run: |
+          set +e
+          echo "--- identity and session ---"
+          id
+          echo "XDG_SESSION_ID=${XDG_SESSION_ID:-<unset>}"
+          loginctl list-sessions 2>&1 | head -5
+          loginctl session-status 2>&1 | head -5
+          echo
+          echo "--- every what/mode combination ---"
+          for what in idle:sleep idle sleep shutdown; do
+            for mode in block delay; do
+              out=$(systemd-inhibit --what=$what --mode=$mode --who=probe --why=probe true 2>&1)
+              echo "what=$what mode=$mode rc=$? :: ${out:-<silent>}"
+            done
+          done
+          echo
+          echo "--- as root, for contrast ---"
+          out=$(sudo systemd-inhibit --what=idle:sleep --mode=block --who=probe --why=probe true 2>&1)
+          echo "root idle:sleep block rc=$? :: ${out:-<silent>}"
+          echo
+          echo "--- what the idle timer even is here ---"
+          systemd-inhibit --list 2>&1 | head -5
+          loginctl show-seat seat0 2>&1 | head -5
