@@ -64,7 +64,6 @@ jobs:
     # "Failed to inhibit: Access denied", and which of logind's polkit actions is
     # being refused decides whether that is a bug here or an environment with
     # nothing to inhibit in the first place.
-    if: github.event_name == 'workflow_dispatch'
     name: probe (linux inhibitor permissions)
     runs-on: ubuntu-latest
     steps:
@@ -92,3 +91,4 @@ jobs:
           echo "--- what the idle timer even is here ---"
           systemd-inhibit --list 2>&1 | head -5
           loginctl show-seat seat0 2>&1 | head -5
+          exit 0
