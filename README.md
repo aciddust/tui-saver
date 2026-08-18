@@ -117,6 +117,24 @@ by a watcher cannot leak: the watcher notices the pid is gone, and if the watche
 itself is killed the OS drops the lock with the process. There is no path that
 leaves a machine permanently unable to sleep.
 
+### Which machine
+
+Over ssh, everything here works and none of it is about the computer in front of
+you: the lock, the battery reading and the idle timer all belong to the far end.
+The status bar says `ssh:<host>` and `--doctor` names it, because a program whose
+argument is that its state is visible should not be vague about *whose* state it
+is showing.
+
+This mattered less than it should have until recently. The Linux backend failed
+silently without a login session — which is exactly the ssh case — so the question
+rarely came up. Now it works, and keeping the wrong machine awake is something
+that can actually happen.
+
+The remaining blind spot is a **detached tmux session**: the animation carries on
+rendering into a pane nobody is looking at, and the lock stays held, which is the
+invisible-mode problem this program exists to avoid. `--for` is the answer for
+now.
+
 ### Knowing it is really held
 
 A running watcher is not proof. The request can be refused, or dropped by
