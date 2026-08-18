@@ -128,19 +128,36 @@ if (!mine) {
     if (chunk.split('\n').some((l) => l.trim() === HELD_MARKER)) reported = true;
   });
   const reports = Array.isArray(opts.stdio) && opts.stdio[1] === 'pipe';
+  let waitedMs = 0;
   if (reports) {
-    // No fixed allowance: the Windows watcher compiles a P/Invoke shim before it
-    // can take the lock, which took a flat four seconds here to cover. It says
-    // when it is ready, so this waits for that and no longer.
-    const deadline = Date.now() + 10_000;
-    while (!reported && Date.now() < deadline) await sleep(100);
+    // Waits for the watcher's own word rather than a fixed allowance, because
+    // compiling the P/Invoke shim takes as long as the machine takes — ten seconds
+    // was not enough on one loaded runner, which is the same class of guess this
+    // check exists to remove.
+    //
+    // The deadline is generous because the failure that matters announces itself
+    // differently: a watcher that cannot hold the lock exits, and that is checked
+    // for on every pass.
+    const started = Date.now();
+    const deadline = started + 45_000;
+    while (!reported && Date.now() < deadline) {
+      if (watcher.exitCode !== null || watcher.signalCode !== null) break;
+      await sleep(100);
+    }
+    waitedMs = Date.now() - started;
   } else {
     await sleep(500);
   }
   check(spawnError === null, 'watcher launched', spawnError ?? '');
   const watcherPid = watcher.pid;
   check(watcherPid !== undefined && alive(watcherPid), `watcher running (pid ${watcherPid})`);
-  if (reports) check(reported, `watcher reported holding the lock ("${HELD_MARKER}")`);
+  if (reports) {
+    check(
+      reported,
+      `watcher reported holding the lock ("${HELD_MARKER}")`,
+      `waited ${(waitedMs / 1000).toFixed(1)}s`,
+    );
+  }
   // PowerShell wraps a redirected stderr in a CLIXML envelope whether or not it
   // has anything to say, so printing that raw makes a clean run look as if the
   // watcher complained. Only the message lines are worth showing.
