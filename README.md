@@ -53,6 +53,28 @@ cycling. `n` and `p` still work while pinned, so you can step by hand.
 `--only globe,fire` is the in-between case: a short playlist of just the scenes
 you want, still cycling.
 
+## Stopping by itself
+
+Nothing bounds a run by default, and that is deliberate: the lock is held for
+exactly as long as the animation is on screen, and a full-screen animation is
+hard to forget about. But a run you walked away from outlives its reason, so it
+can be given an end:
+
+```sh
+tui-saver --for 90m        # 90s, 45m, 2h, 1h30m
+tui-saver --until 18:00    # the next 18:00 — tomorrow's, if today's has passed
+```
+
+The status bar counts down, goes amber for the last minute, and `+` adds fifteen
+minutes if you are still there. With no limit it shows the other number instead:
+how long this has been up, and therefore how long the machine has been kept awake.
+
+`caffeinate -t` already does the first of these, and this is not pretending
+otherwise. What it adds is the same thing on the other two platforms —
+`systemd-inhibit` has no timeout option and neither does `SetThreadExecutionState`
+— and a timer you can see. A countdown nobody can read is how a limit ends up
+extended by guesswork.
+
 ## Staying awake
 
 Each platform has some way to say "don't idle out while I'm running", and all
@@ -248,7 +270,8 @@ p / ←        previous scene        c       cycle palette
 space        pause                 [ ]     slower / faster
 f            pin current scene     0       reset speed
 s            shuffle playlist      h       hide status bar
-?            help                  q       quit
++            add 15m to the limit  ?       help
+q            quit
 ```
 
 ## Options
@@ -262,6 +285,8 @@ playback
   --fps <n>               target frame rate                       [32]
   --speed <n>             time multiplier                         [1]
   --shuffle               randomise the playlist order
+  --for <90m|2h|1h30m>    end the whole run after this long
+  --until <HH:MM>         end the whole run at this time of day
 
 look
   --mode <braille|half|ascii>   force a render mode for every scene

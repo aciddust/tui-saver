@@ -48,3 +48,21 @@ test('--require-awake and --no-awake cannot both be meant', () => {
     }, argv.join(' '));
   }
 });
+
+test('there is no session limit unless one is asked for', () => {
+  assert.equal(parseArgs([]).opts.sessionSeconds, null);
+});
+
+test('--for is resolved to seconds at parse time', () => {
+  assert.equal(parseArgs(['--for', '90m']).opts.sessionSeconds, 5400);
+});
+
+test('--until is resolved against the clock at parse time', () => {
+  const { opts } = parseArgs(['--until', '23:59']);
+  assert.ok(opts.sessionSeconds !== null && opts.sessionSeconds > 0);
+  assert.ok(opts.sessionSeconds <= 24 * 3600);
+});
+
+test('--for and --until cannot both set the same limit', () => {
+  assert.throws(() => parseArgs(['--for', '1h', '--until', '18:00']), CliError);
+});

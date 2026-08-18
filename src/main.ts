@@ -13,6 +13,7 @@ import { Canvas, makeCells, RAMPS, RENDER_MODES, type CellBuffer, type RenderMod
 import { PALETTES } from './core/color.ts';
 import type { Scene } from './core/scene.ts';
 import { detectColorDepth, Screen, supportsBraille } from './core/screen.ts';
+import { extendLimit, sessionView } from './session.ts';
 import { dissolve, drawBanner, drawHelp, drawHud } from './ui.ts';
 
 /**
@@ -93,6 +94,11 @@ async function main(): Promise<void> {
 
   // One bell per transition into failure, not one per frame.
   let alarmed = false;
+  // Wall clock, not scene time: --speed and pausing change how fast the
+  // animation moves, not how long the machine has been kept awake.
+  const startedAt = Date.now();
+  // Mutable because '+' extends it.
+  let sessionLimit = opts.sessionSeconds;
   let index = 0;
   let curT = 0;
   let outgoing: Scene | null = null;
@@ -237,6 +243,12 @@ async function main(): Promise<void> {
       case 'f':
         pinned = !pinned;
         return;
+      case '+':
+      case '=':
+        // Nothing to extend when the run has no end; silently doing nothing is
+        // better than inventing a limit the user never asked for.
+        sessionLimit = extendLimit(sessionLimit, 15 * 60);
+        return;
       case 's':
         shuffle(playlist);
         switchTo(0, false);
@@ -285,6 +297,13 @@ async function main(): Promise<void> {
       switchTo(index + 1);
     }
 
+    const elapsed = (Date.now() - startedAt) / 1000;
+    const session = sessionView(elapsed, sessionLimit);
+    if (session.expired) {
+      quit(0);
+      return;
+    }
+
     const scene = playlist[index];
     renderScene(scene, canvases[0], curT, dt, cellsCur);
 
@@ -306,7 +325,9 @@ async function main(): Promise<void> {
         fps,
         speed,
         paused,
-        remaining: pinned || opts.duration === 0 ? null : Math.max(0, opts.duration - curT),
+        sceneRemaining: pinned || opts.duration === 0 ? null : Math.max(0, opts.duration - curT),
+        elapsed,
+        sessionRemaining: session.remaining,
         awake: awake.label,
         awakeOk: awake.state === 'holding' || awake.state === 'off',
       });
