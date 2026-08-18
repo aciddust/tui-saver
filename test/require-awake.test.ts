@@ -45,3 +45,13 @@ test('--require-awake with --no-awake is rejected before anything starts', () =>
   assert.equal(r.status, 2);
   assert.match(r.stderr, /contradict/);
 });
+
+test('--doctor says how the lock was confirmed, not merely that it launched', () => {
+  // The wait before querying the OS used to be a fixed guess — 3.5s on Windows,
+  // long enough for PowerShell to compile the P/Invoke shim. There is a report
+  // to wait for now, so doctor waits for evidence and states what it got.
+  const r = run(['--doctor']);
+  assert.equal(r.status, 0, r.stderr);
+  assert.match(r.stdout, /evidence/);
+  assert.doesNotMatch(r.stdout, /FAILED/);
+});

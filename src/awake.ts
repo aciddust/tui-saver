@@ -641,6 +641,14 @@ export class Awake {
   }
 }
 
+/** How to read each grade of evidence, for anyone running --doctor. */
+const EVIDENCE_NOTE: Record<AwakeEvidence, string> = {
+  os: '           the platform’s own tool reports the lock',
+  'self-report': '  the watcher says so; nothing independent has agreed',
+  liveness: '     the watcher is running, and that is all we know',
+  none: '         nothing is being held',
+};
+
 /**
  * Prints what the OS itself reports, so "is it really staying awake?" is
  * answerable without taking this program's word for it. Holds the same lock the
@@ -665,29 +673,25 @@ export async function doctor(): Promise<number> {
 
   out(`  mechanism     ${backend.mechanism}`);
 
-  let held: ChildProcess;
-  try {
-    const { cmd, args, opts } = backend.command(process.pid, false);
-    held = spawn(cmd, args, opts);
-  } catch (err) {
-    out(`  watcher       FAILED to launch: ${String(err)}`);
-    return 1;
-  }
-  let launchError: string | null = null;
-  held.on('error', (err) => {
-    launchError = err.message;
-  });
+  // The same class a real run uses, rather than a second copy of the spawn.
+  const held = new Awake({ enabled: true, defeatScreensaver: false });
+  held.start();
 
-  // PowerShell has to compile the P/Invoke shim on first use, so give the
-  // watcher long enough to actually take the lock before asking about it.
-  await new Promise((resolve) => setTimeout(resolve, process.platform === 'win32' ? 3500 : 400));
+  // Waiting for evidence rather than for a duration. This used to be a flat
+  // 3.5 seconds on Windows, because the watcher there has to compile a P/Invoke
+  // shim with Add-Type before it can take the lock, and asking the OS any sooner
+  // reported a lock that genuinely was not held yet. The guess was both too slow
+  // on a fast machine and not provably long enough on a slow one; the watcher now
+  // says when it is ready, so there is nothing left to estimate.
+  const evidence = await held.confirm();
 
-  if (launchError) {
-    out(`  watcher       FAILED: ${launchError}`);
+  if (held.state !== 'holding') {
+    out(`  watcher       FAILED: ${held.detail}`);
     printNotes(out, backend);
     return 1;
   }
-  out(`  watcher       running (pid ${held.pid})`);
+  out(`  watcher       running (pid ${held.watcherPid})`);
+  out(`  evidence      ${evidence}${EVIDENCE_NOTE[evidence]}`);
 
   const v = backend.verify;
   let exit = 0;
@@ -729,11 +733,7 @@ export async function doctor(): Promise<number> {
   }
 
   printNotes(out, backend);
-  try {
-    held.kill();
-  } catch {
-    /* already gone */
-  }
+  held.stop();
   return exit;
 }
 
