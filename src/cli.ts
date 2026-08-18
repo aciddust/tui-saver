@@ -114,17 +114,6 @@ export function parseUntil(raw: string, now: Date = new Date()): number {
   return seconds > 0 ? seconds : seconds + 24 * 3600;
 }
 
-/** A span for a status bar: widest unit first, two units at most. */
-export function formatSpan(seconds: number): string {
-  const total = Math.max(0, Math.floor(seconds));
-  const h = Math.floor(total / 3600);
-  const m = Math.floor((total % 3600) / 60);
-  const s = total % 60;
-  if (h > 0) return `${h}h${String(m).padStart(2, '0')}m`;
-  if (m > 0) return `${m}m${String(s).padStart(2, '0')}s`;
-  return `${s}s`;
-}
-
 export const USAGE = `tui-saver — geometric ASCII screensaver that keeps the host awake
 
 usage: tui-saver [options]
@@ -233,6 +222,9 @@ export function parseArgs(argv: string[]): { opts: Options; exit?: () => Promise
         limitFrom = a;
         const v = need(i, a);
         opts.sessionSeconds = a === '--for' ? parseDuration(v) : parseUntil(v);
+        if (opts.sessionSeconds === 0) {
+          throw new CliError('--for 0 would end the run immediately; omit it to run until quit');
+        }
         i++;
         break;
       }
