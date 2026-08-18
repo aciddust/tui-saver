@@ -14,7 +14,7 @@
  *
  *   macOS    caffeinate -dis -w <pid>
  *   Windows  powershell -> SetThreadExecutionState, then Wait-Process <pid>
- *   Linux    systemd-inhibit --what=idle:sleep -- tail --pid=<pid> -f /dev/null
+ *   Linux    systemd-inhibit --what=idle -- tail --pid=<pid> -f /dev/null
  *
  * What none of them do is stop the screen saver or lock screen, which run off a
  * separate idle timer and would cover the animation. `--defeat-screensaver`
@@ -275,14 +275,27 @@ const win32: Backend = {
 
 const linux: Backend = {
   platform: 'linux',
-  mechanism: 'systemd-inhibit --what=idle:sleep -- tail --pid=<pid> -f /dev/null',
+  mechanism: 'systemd-inhibit --what=idle -- tail --pid=<pid> -f /dev/null',
   command(pid) {
     // systemd-inhibit holds the lock for exactly as long as its child runs, and
     // `tail --pid` blocks until that pid exits without polling.
     return {
       cmd: 'systemd-inhibit',
       args: [
-        '--what=idle:sleep',
+        // idle, and only idle. Measured on a machine with no login session:
+        // --what=idle --mode=block is granted, while sleep and shutdown block are
+        // refused by polkit with "Access denied". A systemd-inhibit request is
+        // atomic, so asking for idle:sleep there loses the idle inhibitor as
+        // well and holds nothing at all — over SSH, headless, or anywhere else
+        // without a seat.
+        //
+        // Nothing is really given up by narrowing it. Blocking sleep would also
+        // block an explicit suspend — a lid close, systemctl suspend, the power
+        // button — which is the user asking for something, not the idle timer
+        // taking it. macOS makes the same concession from the other direction:
+        // caffeinate's -s is documented as valid only on AC power, so the
+        // strongest component is silently dropped on battery there too.
+        '--what=idle',
         '--who=tui-saver',
         '--why=Running a terminal screensaver',
         '--mode=block',
@@ -308,6 +321,9 @@ const linux: Backend = {
   notes: [
     'Needs systemd-logind, which is what desktop distributions use. On a system',
     'without it the animation still runs but nothing holds the idle timer.',
+    'The inhibitor covers the idle timer only. An explicit suspend — a lid close,',
+    'systemctl suspend — still sleeps the machine, and blocking that needs an',
+    'active login session that polkit will authorise.',
     'The screen locker is separate. --defeat-screensaver calls',
     'xdg-screensaver reset, which needs xdg-utils installed.',
   ],

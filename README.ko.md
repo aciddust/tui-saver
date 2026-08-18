@@ -153,7 +153,7 @@ macOS는 `caffeinate`, Windows는 `SetThreadExecutionState`, Linux는 `systemd-i
 | ------- | -------------------------------------------------------------------- |
 | macOS   | `caffeinate -dis -w <pid>`                                           |
 | Windows | `powershell` → `SetThreadExecutionState`, 이어서 `Wait-Process <pid>`   |
-| Linux   | `systemd-inhibit --what=idle:sleep -- tail --pid=<pid> -f /dev/null` |
+| Linux   | `systemd-inhibit --what=idle -- tail --pid=<pid> -f /dev/null` |
 
 
 ### 정말 걸려 있는지 아는 방법
@@ -249,11 +249,31 @@ PowerShell에 넘기는 바이트열, 따옴표와 중괄호 짝, 플래그 값�
 
 배포 전에 Windows에서 `tools/check-awake.ts`를 한 번 돌려 보는 게 좋다.
 
-**Linux도 사정이 같다.**
-`systemd-logind` 기준으로 짰지만 돌려 보진 않았다.
-`systemd-inhibit` 명령이 있어야 하는데, 데스크톱용 배포판이면 대체로 들어 있다.
-GitHub 러너에는 systemd는 있지만 그래픽 로그인 세션이 없다.
-거기서 잠금이 잡히는지는 CI를 돌려 봐야 안다.
+**Linux는 CI로 확인했고, 확인하다가 문제를 찾았다.**
+
+원래는 `--what=idle:sleep`을 요청했다.
+로그인 세션이 없는 기계에서는 polkit이 `sleep` 쪽을 "Access denied"로 거절한다.
+
+그런데 `systemd-inhibit` 요청은 원자적이다.
+`sleep`이 거절되면 `idle`까지 같이 날아간다.
+
+즉 SSH로 붙었거나, 헤드리스거나, seat이 없는 환경에서는
+이 프로그램이 **아무것도 못 잡고 있으면서 잡고 있다고 말하고 있었다.**
+
+지금은 `--what=idle`만 요청한다. 세션이 있든 없든 허용된다.
+
+범위를 좁힌 대가는 생각보다 작다.
+`sleep`을 막는다는 건 명시적인 절전까지 막는다는 뜻이다.
+뚜껑을 덮거나 `systemctl suspend`를 치거나 전원 버튼을 누르는 것 말이다.
+그건 idle 타이머가 가져가는 게 아니라 사람이 요청하는 거다.
+
+macOS도 반대쪽에서 같은 양보를 한다.
+`caffeinate`의 `-s`는 문서에 "AC 전원일 때만 유효하다"고 적혀 있다.
+배터리에서는 가장 센 옵션이 조용히 빠진다.
+
+잃는 건 하나다.
+데스크톱 세션 사용자가 이 프로그램으로 명시적 절전을 막을 수는 없게 됐다.
+스크린세이버가 할 일이 아니었다.
 
 ### 못 하는 일
 

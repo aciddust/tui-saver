@@ -108,7 +108,7 @@ and then **watches our pid**, so it releases on its own when we go away.
 | ------- | ----------------------------------------------------------------------- |
 | macOS   | `caffeinate -dis -w <pid>`                                              |
 | Windows | `powershell` -&gt; `SetThreadExecutionState`, then `Wait-Process <pid>` |
-| Linux   | `systemd-inhibit --what=idle:sleep -- tail --pid=<pid> -f /dev/null`    |
+| Linux   | `systemd-inhibit --what=idle -- tail --pid=<pid> -f /dev/null`    |
 
 
 That indirection is the whole design. A lock held by *us* leaks if we are killed
@@ -191,10 +191,21 @@ structure, the flag values (`ES_CONTINUOUS|ES_SYSTEM_REQUIRED|ES_DISPLAY_REQUIRE
 to hold, `ES_CONTINUOUS` alone to release), and that the release runs in a
 `finally`. Run `tools/check-awake.ts` on Windows before shipping.
 
-**Linux** — same caveat: implemented against `systemd-logind`, not executed. Needs
-`systemd-inhibit` on PATH, which desktop distributions have. Whether a GitHub
-runner — systemd present, no graphical login session — will grant the inhibitor
-is exactly what the CI job is there to find out.
+**Linux** — verified in CI, and it found something. The watcher used to ask for
+`--what=idle:sleep`, and on a machine with no login session polkit refuses the
+`sleep` half with "Access denied". A `systemd-inhibit` request is atomic, so the
+`idle` half went down with it: over SSH, headless, or anywhere without a seat, this
+program held **nothing at all** while reporting that it did. It now asks for
+`--what=idle`, which is granted with or without a session.
+
+Narrowing it gives up less than it sounds. Blocking `sleep` would also block an
+explicit suspend — a lid close, `systemctl suspend`, the power button — which is
+someone asking for something rather than the idle timer taking it. macOS makes the
+same concession from the other end: `caffeinate`'s `-s` is documented as valid only
+on AC power, so its strongest component is silently dropped on battery.
+
+The trade is that a desktop-session user can no longer block an explicit suspend
+through this program. That was never what a screensaver should be doing.
 
 ### What none of them do
 
