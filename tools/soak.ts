@@ -86,6 +86,7 @@ for (const [cols, rows] of SIZES) {
             sessionRemaining: 600,
             battery: { percent: 42, discharging: true },
             remote: 'build-box',
+            whilePid: 4242,
       awake: 'awake',
       awakeOk: true,
     });

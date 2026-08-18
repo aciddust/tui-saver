@@ -49,6 +49,7 @@ function hud(over: Partial<HudInfo> = {}): string {
     sessionRemaining: null,
     battery: null,
     remote: null,
+    whilePid: null,
     ...over,
   });
   return rowText(cb, 11);
@@ -117,6 +118,7 @@ test('the chrome writes nothing that occupies more than one column', () => {
     sessionRemaining: 605,
     battery: { percent: 100, discharging: false },
     remote: 'build-box',
+    whilePid: 4242,
   });
   banner(cb, 'a warning of some kind');
   drawHelp(cb);
@@ -159,6 +161,7 @@ test('the awake indicator survives a terminal too narrow for anything else', () 
       sessionRemaining: 605,
       battery: { percent: 100, discharging: false },
       remote: 'build-box',
+      whilePid: 4242,
     });
     assert.match(rowText(cb, 5), /awake:FAIL/, `at ${cols} columns`);
   }
@@ -185,10 +188,19 @@ test('what the bar drops first is decoration, not the things that matter', () =>
     sessionRemaining: 605,
     battery: { percent: 9, discharging: true },
     remote: 'build-box',
+    whilePid: null,
   });
   const row = rowText(cb, 5);
   assert.match(row, /awake:os/);
   assert.match(row, /ssh:build-box/, 'which machine is being kept awake');
   assert.match(row, /bat 9%/, 'a battery about to run out');
   assert.doesNotMatch(row, /viridis/, 'the palette is decoration');
+});
+
+test('the status bar names the pid the run is waiting for', () => {
+  assert.match(hud({ whilePid: 4242 }), /while:4242/);
+});
+
+test('a run waiting for nothing says nothing about it', () => {
+  assert.doesNotMatch(hud({ whilePid: null }), /while:/);
 });

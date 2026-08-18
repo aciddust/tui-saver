@@ -63,7 +63,23 @@ can be given an end:
 ```sh
 tui-saver --for 90m        # 90s, 45m, 2h, 1h30m
 tui-saver --until 18:00    # the next 18:00 — tomorrow's, if today's has passed
+tui-saver --while 4242     # end when that process does
 ```
+
+`--while` is the honest one. Nobody holds a sleep lock for its own sake; they hold it
+because something is running. `caffeinate -w` is exactly that tool and almost nobody
+reaches for it — partly because its own rules throw it away. The man page: `-w` "is
+ignored when used with utility option", and `-t` likewise, so `caffeinate -t 60 -w
+1234 make` silently discards both. Here `--while` and `--for` both bound the run and
+whichever comes first ends it; neither is dropped for the other's benefit.
+
+A pid that is not running is refused, rather than accepted and returned from
+instantly the way `caffeinate -w` treats a dead pid.
+
+There is no `--while <command>` form, deliberately. `caffeinate <command>` can hand
+the terminal to its child because it draws nothing itself; this program owns the
+screen, so a child's output would be either buried under the animation or thrown
+away. Run the command in another pane and pass its pid.
 
 The status bar counts down, goes amber for the last minute, and `+` adds fifteen
 minutes if you are still there. With no limit it shows the other number instead:
@@ -419,6 +435,7 @@ playback
   --shuffle               randomise the playlist order
   --for <90m|2h|1h30m>    end the whole run after this long
   --until <HH:MM>         end the whole run at this time of day
+  --while <pid>           end the whole run when that process exits
 
 look
   --mode <braille|half|ascii>   force a render mode for every scene

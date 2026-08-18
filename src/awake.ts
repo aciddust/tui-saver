@@ -33,7 +33,7 @@ import {
   parsePowercfgRequests,
   type Holder,
 } from './holders.ts';
-import { formatSpan, remoteHost } from './session.ts';
+import { formatSpan, pidAlive, remoteHost } from './session.ts';
 
 export type AwakeState = 'off' | 'holding' | 'unsupported' | 'failed';
 
@@ -781,7 +781,7 @@ export async function doctor(): Promise<number> {
       // lists everybody else's, and nothing else on this machine will ever mention
       // the caffeinate somebody left running on Tuesday.
       const others = backend.audit
-        ? describeHolders(backend.audit(report), [process.pid, held.watcherPid], alive)
+        ? describeHolders(backend.audit(report), [process.pid, held.watcherPid], pidAlive)
         : [];
       if (others.length > 0) {
         out('');
@@ -794,16 +794,6 @@ export async function doctor(): Promise<number> {
   printNotes(out, backend);
   held.stop();
   return exit;
-}
-
-/** Whether a pid exists, without signalling it. */
-function alive(pid: number): boolean {
-  try {
-    process.kill(pid, 0);
-    return true;
-  } catch {
-    return false;
-  }
 }
 
 function printNotes(out: (s?: string) => void, backend: Backend): void {
