@@ -32,6 +32,12 @@ export type Options = {
   defeatScreensaver: boolean;
   /** null = detect whether the terminal font is likely to have braille. */
   braille: boolean | null;
+  /**
+   * Seconds after which the whole run ends by itself, or null to run until
+   * quit. Resolved here so that --for and --until are the same thing by the time
+   * anything downstream sees them.
+   */
+  sessionSeconds: number | null;
 };
 
 export const DEFAULTS: Options = {
@@ -50,6 +56,7 @@ export const DEFAULTS: Options = {
   requireAwake: false,
   defeatScreensaver: false,
   braille: null,
+  sessionSeconds: null,
 };
 
 /** A bad invocation. Carries the exit code so the caller need not invent one. */
@@ -66,6 +73,51 @@ export class CliError extends Error {
   }
 }
 
+/**
+ * A span written the way people say it: 90s, 90m, 2h, 1h30m. A bare number is
+ * seconds, matching --duration and --transition rather than inventing a second
+ * convention for the same kind of value.
+ */
+export function parseDuration(raw: string): number {
+  const text = raw.trim();
+  if (/^\d+$/.test(text)) return Number(text);
+  const m = text.match(/^(?:(\d+)h)?(?:(\d+)m)?(?:(\d+)s)?$/);
+  if (!m || (!m[1] && !m[2] && !m[3])) {
+    throw new CliError(`not a duration: '${raw}'. try 90s, 45m, 2h or 1h30m`);
+  }
+  return Number(m[1] ?? 0) * 3600 + Number(m[2] ?? 0) * 60 + Number(m[3] ?? 0);
+}
+
+/**
+ * Seconds from now until the next occurrence of a wall-clock time. A time that
+ * has already passed today means that time tomorrow — as does the current
+ * minute, since asking to stop at 14:00 at 14:00 is a request for a whole day,
+ * not for nothing at all.
+ */
+export function parseUntil(raw: string, now: Date = new Date()): number {
+  const m = raw.trim().match(/^(\d{1,2}):(\d{2})$/);
+  const hours = m ? Number(m[1]) : NaN;
+  const minutes = m ? Number(m[2]) : NaN;
+  if (!m || hours > 23 || minutes > 59) {
+    throw new CliError(`not a time of day: '${raw}'. try 18:00`);
+  }
+  const target = new Date(now);
+  target.setHours(hours, minutes, 0, 0);
+  const seconds = Math.round((target.getTime() - now.getTime()) / 1000);
+  return seconds > 0 ? seconds : seconds + 24 * 3600;
+}
+
+/** A span for a status bar: widest unit first, two units at most. */
+export function formatSpan(seconds: number): string {
+  const total = Math.max(0, Math.floor(seconds));
+  const h = Math.floor(total / 3600);
+  const m = Math.floor((total % 3600) / 60);
+  const s = total % 60;
+  if (h > 0) return `${h}h${String(m).padStart(2, '0')}m`;
+  if (m > 0) return `${m}m${String(s).padStart(2, '0')}s`;
+  return `${s}s`;
+}
+
 export const USAGE = `tui-saver — geometric ASCII screensaver that keeps the host awake
 
 usage: tui-saver [options]
@@ -78,6 +130,8 @@ playback
   --fps <n>               target frame rate                      [${DEFAULTS.fps}]
   --speed <n>             time multiplier                        [${DEFAULTS.speed}]
   --shuffle               randomise the playlist order
+  --for <90m|2h|1h30m>    end the whole run after this long
+  --until <HH:MM>         end the whole run at this time of day
 
 look
   --mode <braille|half|ascii>   force a render mode for every scene
@@ -102,6 +156,9 @@ other
 
 export function parseArgs(argv: string[]): { opts: Options; exit?: () => Promise<number> } {
   const opts: Options = { ...DEFAULTS };
+  // Which flag set the session limit, so that repeating one flag is last-wins
+  // while asking for two different limits is an error.
+  let limitFrom: string | null = null;
   const need = (i: number, name: string): string => {
     const v = argv[i + 1];
     if (v === undefined) throw new CliError(`${name} needs a value`);
@@ -159,6 +216,17 @@ export function parseArgs(argv: string[]): { opts: Options; exit?: () => Promise
       case '--shuffle':
         opts.shuffle = true;
         break;
+      case '--for':
+      case '--until': {
+        if (limitFrom !== null && limitFrom !== a) {
+          throw new CliError(`${limitFrom} and ${a} both set the session limit; pick one`);
+        }
+        limitFrom = a;
+        const v = need(i, a);
+        opts.sessionSeconds = a === '--for' ? parseDuration(v) : parseUntil(v);
+        i++;
+        break;
+      }
       case '--mode': {
         const v = need(i, a) as RenderMode;
         if (!RENDER_MODES.includes(v)) {

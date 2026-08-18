@@ -8,6 +8,7 @@
  */
 
 import type { CellBuffer } from './core/canvas.ts';
+import { formatSpan } from './cli.ts';
 import { hash2 } from './core/noise.ts';
 import { pack } from './core/color.ts';
 
@@ -75,7 +76,11 @@ export type HudInfo = {
   speed: number;
   paused: boolean;
   /** Seconds left before the playlist advances, or null when pinned. */
-  remaining: number | null;
+  sceneRemaining: number | null;
+  /** Wall-clock seconds this run has been on screen, and holding the lock. */
+  elapsed: number;
+  /** Seconds left of the whole run, or null when it runs until quit. */
+  sessionRemaining: number | null;
   awake: string;
   awakeOk: boolean;
 };
@@ -92,13 +97,22 @@ export function drawHud(cb: CellBuffer, info: HudInfo): void {
   x = drawText(cb, x, y, `  ${info.fps.toFixed(0)}fps`, DIM, PANEL);
   if (info.speed !== 1) x = drawText(cb, x, y, `  x${info.speed.toFixed(2)}`, ACCENT, PANEL);
   if (info.paused) x = drawText(cb, x, y, '  PAUSED', WARN, PANEL);
-  if (info.remaining === null) x = drawText(cb, x, y, '  pinned', ACCENT, PANEL);
+  if (info.sceneRemaining === null) x = drawText(cb, x, y, '  pinned', ACCENT, PANEL);
+  // With a limit, the countdown; without one, how long this has been up. The
+  // second is the more important of the two: a lock held for four hours is worth
+  // seeing even when nothing asked for it to stop.
+  if (info.sessionRemaining !== null) {
+    const soon = info.sessionRemaining <= 60;
+    x = drawText(cb, x, y, `  ${formatSpan(info.sessionRemaining)} left`, soon ? WARN : ACCENT, PANEL);
+  } else {
+    x = drawText(cb, x, y, `  ${formatSpan(info.elapsed)}`, DIM, PANEL);
+  }
 
   // The pin toggle is worth naming on screen rather than burying in the help
   // overlay: wanting to stop on the scene you are looking at is the first thing
   // anyone reaches for, and a key you have to go find is a key you don't know
   // exists. The label states what pressing it will do, not the current state.
-  const pinHint = info.remaining === null ? 'f:unpin' : 'f:pin';
+  const pinHint = info.sceneRemaining === null ? 'f:unpin' : 'f:pin';
   // Widest hint set that still clears the text on the left; a narrow terminal
   // drops to the shorter ones rather than overwriting the scene name.
   // The last entry is empty: on a narrow terminal the awake indicator is the

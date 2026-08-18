@@ -81,7 +81,9 @@ for (const [cols, rows] of SIZES) {
       fps: 31.7,
       speed: 1.25,
       paused: true,
-      remaining: 4,
+      sceneRemaining: 4,
+            elapsed: 12_345,
+            sessionRemaining: 600,
       awake: 'awake',
       awakeOk: true,
     });
