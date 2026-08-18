@@ -38,6 +38,12 @@ export type Options = {
    * anything downstream sees them.
    */
   sessionSeconds: number | null;
+  /**
+   * Release the lock and end the run below this charge, while on battery.
+   * 0 disables it. On by default because the cost of getting this wrong is a
+   * flat laptop in a bag, and machines with no battery are unaffected.
+   */
+  batteryFloor: number;
 };
 
 export const DEFAULTS: Options = {
@@ -57,6 +63,7 @@ export const DEFAULTS: Options = {
   defeatScreensaver: false,
   braille: null,
   sessionSeconds: null,
+  batteryFloor: 15,
 };
 
 /** A bad invocation. Carries the exit code so the caller need not invent one. */
@@ -145,6 +152,8 @@ look
 staying awake
   --no-awake              do not hold any power assertion
   --require-awake         exit rather than run without a confirmed lock
+  --battery-floor <pct>   end the run below this charge on battery
+                          (0 disables)                          [${DEFAULTS.batteryFloor}]
   --defeat-screensaver    also pulse synthetic user activity so the screen
                           saver and lock screen stay away
   --doctor                report what the kernel says about the assertions
@@ -280,6 +289,16 @@ export function parseArgs(argv: string[]): { opts: Options; exit?: () => Promise
       case '--require-awake':
         opts.requireAwake = true;
         break;
+      case '--battery-floor': {
+        const v = num(need(i, a), a);
+        // Not clamped: clamping turns a typo into a policy without saying so.
+        if (!Number.isInteger(v) || v < 0 || v > 100) {
+          throw new CliError(`${a}: expected a whole percentage from 0 to 100, got ${v}`);
+        }
+        opts.batteryFloor = v;
+        i++;
+        break;
+      }
       case '--defeat-screensaver':
         opts.defeatScreensaver = true;
         break;

@@ -8,12 +8,13 @@
  */
 
 import { Awake } from './awake.ts';
+import { readBattery, type Battery } from './battery.ts';
 import { CliError, parseArgs, resolvePlaylist, shuffle, USAGE, type Options } from './cli.ts';
 import { Canvas, makeCells, RAMPS, RENDER_MODES, type CellBuffer, type RenderMode } from './core/canvas.ts';
 import { PALETTES } from './core/color.ts';
 import type { Scene } from './core/scene.ts';
 import { detectColorDepth, Screen, supportsBraille } from './core/screen.ts';
-import { extendLimit, sessionView } from './session.ts';
+import { batteryGuard, extendLimit, sessionView } from './session.ts';
 import { dissolve, drawBanner, drawHelp, drawHud } from './ui.ts';
 
 /**
@@ -94,6 +95,20 @@ async function main(): Promise<void> {
 
   // One bell per transition into failure, not one per frame.
   let alarmed = false;
+  let battery: Battery | null = null;
+  let batteryLowSince: number | null = null;
+  // Polled regardless of --battery-floor: the charge is worth showing even when
+  // nothing will act on it, since the lock is the reason it is going down. One
+  // reading a minute — a file read on Linux, one short process elsewhere.
+  const pollBattery = (): void => {
+    void readBattery().then((b) => {
+      battery = b;
+    });
+  };
+  pollBattery();
+  const batteryTimer = setInterval(pollBattery, 60_000);
+  batteryTimer.unref();
+
   // Wall clock, not scene time: --speed and pausing change how fast the
   // animation moves, not how long the machine has been kept awake.
   const startedAt = Date.now();
@@ -163,8 +178,9 @@ async function main(): Promise<void> {
     awake.stop();
   };
 
-  const quit = (code = 0): void => {
+  const quit = (code = 0, reason = ''): void => {
     cleanup();
+    if (reason) process.stderr.write(`tui-saver: ${reason}\n`);
     if (awake.everFailed) {
       // Said after leaving the alternate screen, where it survives being read.
       process.stderr.write(
@@ -304,6 +320,13 @@ async function main(): Promise<void> {
       return;
     }
 
+    const guard = batteryGuard(battery, opts.batteryFloor, batteryLowSince, Date.now());
+    batteryLowSince = guard.lowSince;
+    if (guard.stop) {
+      quit(0, `battery at ${battery?.percent}% and falling — released the sleep lock`);
+      return;
+    }
+
     const scene = playlist[index];
     renderScene(scene, canvases[0], curT, dt, cellsCur);
 
@@ -328,6 +351,7 @@ async function main(): Promise<void> {
         sceneRemaining: pinned || opts.duration === 0 ? null : Math.max(0, opts.duration - curT),
         elapsed,
         sessionRemaining: session.remaining,
+        battery,
         awake: awake.label,
         awakeOk: awake.state === 'holding' || awake.state === 'off',
       });
@@ -340,6 +364,12 @@ async function main(): Promise<void> {
       drawBanner(out, `NOT holding the sleep lock — ${awake.detail}`);
     } else {
       alarmed = false;
+      if (guard.secondsLeft !== null) {
+        drawBanner(
+          out,
+          `battery ${battery?.percent}% — releasing the sleep lock in ${guard.secondsLeft}s`,
+        );
+      }
     }
     if (showHelp) drawHelp(out);
 

@@ -84,6 +84,7 @@ for (const [cols, rows] of SIZES) {
       sceneRemaining: 4,
             elapsed: 12_345,
             sessionRemaining: 600,
+            battery: { percent: 42, discharging: true },
       awake: 'awake',
       awakeOk: true,
     });

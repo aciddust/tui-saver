@@ -75,6 +75,28 @@ otherwise. What it adds is the same thing on the other two platforms —
 — and a timer you can see. A countdown nobody can read is how a limit ends up
 extended by guesswork.
 
+## Not flattening the battery
+
+`caffeinate` has no idea what it is plugged into. `-s` is the closest it comes,
+and the man page says the assertion "is valid only when system is running on AC
+power" — so it silently does nothing on battery, which is exactly the case where
+someone shut the lid and walked off believing the machine would stay up.
+
+The charge is read once a minute and shown in the status bar: `bat 74%⚡` on mains,
+`bat 74%` when it is going down. Below `--battery-floor` **while discharging**, the
+run warns for ten seconds and then releases the lock and exits — a machine at 12%
+in a bag is the one outcome nothing else here would have prevented.
+
+```sh
+tui-saver --battery-floor 25   # default 15
+tui-saver --battery-floor 0    # read it, show it, never act on it
+```
+
+Only a battery that is actually going down counts, so working at 8% on mains is
+left alone. A machine with no battery reports none and the guard does nothing,
+which is also what happens on a platform with no reader or when the query fails —
+all four want the same answer.
+
 ## Staying awake
 
 Each platform has some way to say "don't idle out while I'm running", and all
@@ -299,6 +321,7 @@ look
 staying awake
   --no-awake              hold no sleep lock at all
   --require-awake         exit rather than run without a confirmed lock
+  --battery-floor <pct>   end the run below this charge on battery (0 off)  [15]
   --defeat-screensaver    also declare synthetic user activity
   --doctor                report what the OS says about the lock
 ```
@@ -318,6 +341,9 @@ src/core/color.ts    palettes, packing, xterm-256 quantisation
 src/core/noise.ts    hashing and a small xorshift
 src/core/scene.ts    the scene contract
 src/awake.ts         per-platform sleep-lock backends and --doctor
+src/battery.ts       per-platform battery readers, parsers exported
+src/cli.ts           the option table, usage text and parser
+src/session.ts       how long a run lasts and when it stops by itself
 src/ui.ts            status bar, help overlay, dissolve
 src/scenes/          one file per scene
 ```
