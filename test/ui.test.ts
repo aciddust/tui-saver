@@ -47,6 +47,7 @@ function hud(over: Partial<HudInfo> = {}): string {
     awakeOk: true,
     elapsed: 0,
     sessionRemaining: null,
+    battery: null,
     ...over,
   });
   return rowText(cb, 11);
@@ -67,4 +68,18 @@ test('a session limit is counted down instead of counting up', () => {
 test('the scene countdown and the session countdown are not confused for each other', () => {
   const row = hud({ sceneRemaining: 7, elapsed: 30, sessionRemaining: 3600 });
   assert.match(row, /1h00m/);
+});
+
+test('the status bar shows the charge, and marks a battery that is not draining', () => {
+  assert.match(hud({ battery: { percent: 100, discharging: false } }), /bat 100%⚡/);
+});
+
+test('a draining battery is shown without the charging mark', () => {
+  const row = hud({ battery: { percent: 31, discharging: true } });
+  assert.match(row, /bat 31%/);
+  assert.doesNotMatch(row, /⚡/);
+});
+
+test('a machine with no battery says nothing about one', () => {
+  assert.doesNotMatch(hud({ battery: null }), /bat/);
 });

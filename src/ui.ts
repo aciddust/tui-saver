@@ -8,6 +8,7 @@
  */
 
 import type { CellBuffer } from './core/canvas.ts';
+import type { Battery } from './battery.ts';
 import { formatSpan } from './cli.ts';
 import { hash2 } from './core/noise.ts';
 import { pack } from './core/color.ts';
@@ -81,6 +82,8 @@ export type HudInfo = {
   elapsed: number;
   /** Seconds left of the whole run, or null when it runs until quit. */
   sessionRemaining: number | null;
+  /** The battery, or null on a machine that has none to report. */
+  battery: Battery | null;
   awake: string;
   awakeOk: boolean;
 };
@@ -112,6 +115,14 @@ export function drawHud(cb: CellBuffer, info: HudInfo): void {
   // overlay: wanting to stop on the scene you are looking at is the first thing
   // anyone reaches for, and a key you have to go find is a key you don't know
   // exists. The label states what pressing it will do, not the current state.
+  if (info.battery) {
+    // The charge earns its place here because the lock is the reason it is going
+    // down: nothing else on this bar explains why the machine is not resting.
+    const bat = info.battery;
+    const mark = bat.discharging ? '' : '⚡';
+    x = drawText(cb, x, y, `  bat ${bat.percent}%${mark}`, bat.discharging ? ACCENT : DIM, PANEL);
+  }
+
   const pinHint = info.sceneRemaining === null ? 'f:unpin' : 'f:pin';
   // Widest hint set that still clears the text on the left; a narrow terminal
   // drops to the shorter ones rather than overwriting the scene name.

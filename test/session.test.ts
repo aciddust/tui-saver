@@ -31,3 +31,79 @@ test('a run with no limit has nothing to extend', () => {
 test('extending adds to the limit rather than resetting it', () => {
   assert.equal(extendLimit(3600, 900), 4500);
 });
+
+import { batteryGuard } from '../src/session.ts';
+import type { Battery } from '../src/battery.ts';
+
+const draining = (percent: number): Battery => ({ percent, discharging: true });
+const plugged = (percent: number): Battery => ({ percent, discharging: false });
+
+test('no battery to read means the guard does nothing', () => {
+  assert.deepEqual(batteryGuard(null, 15, null, 1000), {
+    lowSince: null,
+    stop: false,
+    secondsLeft: null,
+  });
+});
+
+test('a floor of zero turns the guard off', () => {
+  assert.deepEqual(batteryGuard(draining(3), 0, null, 1000), {
+    lowSince: null,
+    stop: false,
+    secondsLeft: null,
+  });
+});
+
+test('a healthy battery is left alone', () => {
+  assert.deepEqual(batteryGuard(draining(50), 15, null, 1000), {
+    lowSince: null,
+    stop: false,
+    secondsLeft: null,
+  });
+});
+
+test('a low battery on mains power is not a problem', () => {
+  assert.deepEqual(batteryGuard(plugged(4), 15, null, 1000), {
+    lowSince: null,
+    stop: false,
+    secondsLeft: null,
+  });
+});
+
+test('a low battery starts a countdown rather than pulling the rug', () => {
+  assert.deepEqual(batteryGuard(draining(10), 15, null, 1000), {
+    lowSince: 1000,
+    stop: false,
+    secondsLeft: 10,
+  });
+});
+
+test('the countdown runs down', () => {
+  assert.deepEqual(batteryGuard(draining(10), 15, 1000, 4000), {
+    lowSince: 1000,
+    stop: false,
+    secondsLeft: 7,
+  });
+});
+
+test('the countdown reaching zero stops the run', () => {
+  const r = batteryGuard(draining(10), 15, 1000, 11_000);
+  assert.equal(r.stop, true);
+  assert.equal(r.secondsLeft, 0);
+});
+
+test('plugging in during the countdown calls it off', () => {
+  assert.deepEqual(batteryGuard(plugged(10), 15, 1000, 4000), {
+    lowSince: null,
+    stop: false,
+    secondsLeft: null,
+  });
+});
+
+test('exactly at the floor is not below it', () => {
+  assert.deepEqual(batteryGuard(draining(15), 15, null, 1000), {
+    lowSince: null,
+    stop: false,
+    secondsLeft: null,
+  });
+});

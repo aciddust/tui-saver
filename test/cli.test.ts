@@ -66,3 +66,18 @@ test('--until is resolved against the clock at parse time', () => {
 test('--for and --until cannot both set the same limit', () => {
   assert.throws(() => parseArgs(['--for', '1h', '--until', '18:00']), CliError);
 });
+
+test('the battery floor defaults to a percentage that leaves room to act', () => {
+  assert.equal(parseArgs([]).opts.batteryFloor, 15);
+});
+
+test('--battery-floor 0 turns the guard off', () => {
+  assert.equal(parseArgs(['--battery-floor', '0']).opts.batteryFloor, 0);
+});
+
+test('a battery floor outside 0-100 is rejected rather than clamped', () => {
+  // Clamping would silently turn a typo into a policy.
+  assert.throws(() => parseArgs(['--battery-floor', '150']), CliError);
+  assert.throws(() => parseArgs(['--battery-floor', '-1']), CliError);
+  assert.throws(() => parseArgs(['--battery-floor', 'low']), CliError);
+});
