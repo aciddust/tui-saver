@@ -6,8 +6,11 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
+import { fileURLToPath } from 'node:url';
 
-const ENTRY = new URL('../src/main.ts', import.meta.url).pathname;
+// Not .pathname: on Windows that yields '/D:/...', which then joins into
+// 'D:\D:\...'. CI found this; a macOS-only run never would have.
+const ENTRY = fileURLToPath(new URL('../src/main.ts', import.meta.url));
 
 function run(args: string[], env: NodeJS.ProcessEnv = {}) {
   return spawnSync(process.execPath, [ENTRY, ...args], {

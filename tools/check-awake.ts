@@ -114,11 +114,24 @@ if (!mine) {
   watcher.on('error', (e) => {
     spawnError = e.message;
   });
+  // A watcher that refuses to start explains itself on stderr. Printing that is
+  // the difference between "FAIL watcher running" and knowing what to do next.
+  let complaint = '';
+  watcher.stderr?.setEncoding('utf8');
+  watcher.stderr?.on('data', (chunk: string) => {
+    complaint += chunk;
+  });
   // PowerShell compiles the P/Invoke shim on first use; give it room.
   await sleep(process.platform === 'win32' ? 4000 : 500);
   check(spawnError === null, 'watcher launched', spawnError ?? '');
   const watcherPid = watcher.pid;
   check(watcherPid !== undefined && alive(watcherPid), `watcher running (pid ${watcherPid})`);
+  if (complaint.trim()) {
+    process.stdout.write('       it said:\n');
+    for (const line of complaint.trim().split('\n').slice(0, 8)) {
+      process.stdout.write(`         ${line.trim()}\n`);
+    }
+  }
 
   // Ask the OS, where we can. On Windows this needs elevation and is reported
   // rather than failed, because the kill test below is the load-bearing one.

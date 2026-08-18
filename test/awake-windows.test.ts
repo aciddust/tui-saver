@@ -38,9 +38,9 @@ test('the watcher re-announces from inside the wait loop, so silence means troub
   assert.equal(marker.length, 2, 'once after taking the lock, once per wait iteration');
 });
 
-test('stdout is piped, since that is where the announcement arrives', () => {
+test('both output streams are kept: one announces, the other explains', () => {
   const cmd = watcherCommandFor('win32', 4242, false);
-  assert.deepEqual(cmd?.opts.stdio, ['ignore', 'pipe', 'ignore']);
+  assert.deepEqual(cmd?.opts.stdio, ['ignore', 'pipe', 'pipe']);
 });
 
 test('releasing still happens in a finally block', () => {
