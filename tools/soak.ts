@@ -85,6 +85,7 @@ for (const [cols, rows] of SIZES) {
             elapsed: 12_345,
             sessionRemaining: 600,
             battery: { percent: 42, discharging: true },
+            remote: 'build-box',
       awake: 'awake',
       awakeOk: true,
     });

@@ -55,3 +55,15 @@ test('--doctor says how the lock was confirmed, not merely that it launched', ()
   assert.match(r.stdout, /evidence/);
   assert.doesNotMatch(r.stdout, /FAILED/);
 });
+
+test('--doctor names the host when the lock is being held somewhere else', () => {
+  const r = run(['--doctor'], { SSH_CONNECTION: '10.0.0.1 52000 10.0.0.2 22' });
+  assert.equal(r.status, 0, r.stderr);
+  assert.match(r.stdout, /host/);
+  assert.match(r.stdout, /over ssh/i);
+});
+
+test('--doctor says nothing about a host on a local run', () => {
+  const r = run([]);
+  assert.doesNotMatch(r.stdout, /over ssh/i);
+});

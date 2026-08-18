@@ -24,6 +24,9 @@
  */
 
 import { type ChildProcess, execFile, execFileSync, spawn } from 'node:child_process';
+import { hostname } from 'node:os';
+
+import { remoteHost } from './session.ts';
 
 export type AwakeState = 'off' | 'holding' | 'unsupported' | 'failed';
 
@@ -661,6 +664,13 @@ export async function doctor(): Promise<number> {
   out('tui-saver --doctor');
   out(`  platform      ${process.platform} (${process.arch})`);
   out(`  pid           ${process.pid}`);
+  // Said before anything else about the lock, because it changes who the rest of
+  // this report is about.
+  const remote = remoteHost(process.env, hostname());
+  if (remote) {
+    out(`  host          ${remote} — over ssh, so the lock is held here, not where`);
+    out('                you are typing');
+  }
 
   const backend = backendFor(process.platform);
   if (!backend) {
