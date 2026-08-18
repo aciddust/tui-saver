@@ -32,6 +32,7 @@
   },
   "files": [
     "dist",
+    "CHANGELOG.md",
     "README.ko.md"
   ],
   "scripts": {
