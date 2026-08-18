@@ -14,6 +14,20 @@ import type { Battery } from './battery.ts';
 /** How long a low battery is warned about before the run ends. */
 const BATTERY_GRACE_MS = 10_000;
 
+/**
+ * A span written for a person: widest unit first, two units at most. Shared by the
+ * status bar and --doctor, which is why it lives here rather than in either.
+ */
+export function formatSpan(seconds: number): string {
+  const total = Math.max(0, Math.floor(seconds));
+  const h = Math.floor(total / 3600);
+  const m = Math.floor((total % 3600) / 60);
+  const s = total % 60;
+  if (h > 0) return `${h}h${String(m).padStart(2, '0')}m`;
+  if (m > 0) return `${m}m${String(s).padStart(2, '0')}s`;
+  return `${s}s`;
+}
+
 export type SessionView = {
   /** Seconds left of the run, or null when it runs until quit. */
   remaining: number | null;

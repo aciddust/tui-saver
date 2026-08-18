@@ -20,6 +20,7 @@ import { detectColorDepth, Screen, supportsBraille } from './core/screen.ts';
 import {
   batteryGuard,
   extendLimit,
+  formatSpan,
   parseTmuxVisibility,
   remoteHost,
   sessionView,
@@ -28,7 +29,7 @@ import {
   unseenTick,
   type Unseen,
 } from './session.ts';
-import { dissolve, drawBanner, drawHelp, drawHud, formatSpan } from './ui.ts';
+import { dissolve, drawBanner, drawHelp, drawHud } from './ui.ts';
 
 /**
  * Turns a bad invocation into a message and an exit code. Parsing throws rather
