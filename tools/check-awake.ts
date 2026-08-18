@@ -20,7 +20,7 @@
  */
 
 import { execFileSync, spawn } from 'node:child_process';
-import { watcherCommandFor, supportedPlatforms } from '../src/awake.ts';
+import { HELD_MARKER, watcherCommandFor, supportedPlatforms } from '../src/awake.ts';
 
 let failures = 0;
 const check = (ok: boolean, label: string, detail = ''): void => {
@@ -121,8 +121,23 @@ if (!mine) {
   watcher.stderr?.on('data', (chunk: string) => {
     complaint += chunk;
   });
-  // PowerShell compiles the P/Invoke shim on first use; give it room.
-  await sleep(process.platform === 'win32' ? 4000 : 500);
+  // Where the watcher can say when it holds the lock, wait for it to say so.
+  let reported = false;
+  watcher.stdout?.setEncoding('utf8');
+  watcher.stdout?.on('data', (chunk: string) => {
+    if (chunk.split('\n').some((l) => l.trim() === HELD_MARKER)) reported = true;
+  });
+  const reports = Array.isArray(opts.stdio) && opts.stdio[1] === 'pipe';
+  if (reports) {
+    // No fixed allowance: the Windows watcher compiles a P/Invoke shim before it
+    // can take the lock, which took a flat four seconds here to cover. It says
+    // when it is ready, so this waits for that and no longer.
+    const deadline = Date.now() + 10_000;
+    while (!reported && Date.now() < deadline) await sleep(100);
+    check(reported, `watcher reported holding the lock ("${HELD_MARKER}")`);
+  } else {
+    await sleep(500);
+  }
   check(spawnError === null, 'watcher launched', spawnError ?? '');
   const watcherPid = watcher.pid;
   check(watcherPid !== undefined && alive(watcherPid), `watcher running (pid ${watcherPid})`);

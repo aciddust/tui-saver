@@ -159,8 +159,9 @@ its P/Invoke shim before the lock existed to be asked about.
 or `awake~`, which is what you want when wrapping work that must not be
 interrupted.
 
-`--doctor` holds the same lock and then prints the platform's own view of it, so
-you never have to take this file's word for it.
+`--doctor` holds the same lock, waits for the watcher to confirm it, and then
+prints which grade of evidence it got alongside the platform's own view of it — so
+you never have to take this file's word for any of it.
 
 ### Verifying it yourself
 
