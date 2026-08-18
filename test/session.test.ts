@@ -107,3 +107,32 @@ test('exactly at the floor is not below it', () => {
     secondsLeft: null,
   });
 });
+
+import { remoteHost } from '../src/session.ts';
+
+test('a local run says nothing about which machine it is', () => {
+  assert.equal(remoteHost({}, 'my-laptop'), null);
+});
+
+test('an ssh session names the machine actually being kept awake', () => {
+  // The whole point: over ssh the lock is held there, not on the laptop you are
+  // typing on, and nothing on screen used to say so.
+  assert.equal(remoteHost({ SSH_CONNECTION: '10.0.0.1 52000 10.0.0.2 22' }, 'build-box'), 'build-box');
+});
+
+test('SSH_TTY and SSH_CLIENT count too, since not every sshd sets all three', () => {
+  assert.equal(remoteHost({ SSH_TTY: '/dev/pts/0' }, 'box'), 'box');
+  assert.equal(remoteHost({ SSH_CLIENT: '10.0.0.1 52000 22' }, 'box'), 'box');
+});
+
+test('only the first label of a long hostname, which is the part that identifies it', () => {
+  assert.equal(
+    remoteHost({ SSH_CONNECTION: 'x' }, 'ip-10-0-1-23.eu-west-1.compute.internal'),
+    'ip-10-0-1-23',
+  );
+});
+
+test('a hostname there is nothing to say about is not shown', () => {
+  assert.equal(remoteHost({ SSH_CONNECTION: 'x' }, ''), null);
+  assert.equal(remoteHost({ SSH_CONNECTION: '' }, 'box'), null);
+});

@@ -7,6 +7,8 @@
  * scenes, and hand finished frames to the diffing writer.
  */
 
+import { hostname } from 'node:os';
+
 import { Awake } from './awake.ts';
 import { readBattery, type Battery } from './battery.ts';
 import { CliError, parseArgs, resolvePlaylist, shuffle, USAGE, type Options } from './cli.ts';
@@ -14,7 +16,7 @@ import { Canvas, makeCells, RAMPS, RENDER_MODES, type CellBuffer, type RenderMod
 import { PALETTES } from './core/color.ts';
 import type { Scene } from './core/scene.ts';
 import { detectColorDepth, Screen, supportsBraille } from './core/screen.ts';
-import { batteryGuard, extendLimit, sessionView } from './session.ts';
+import { batteryGuard, extendLimit, remoteHost, sessionView } from './session.ts';
 import { dissolve, drawBanner, drawHelp, drawHud } from './ui.ts';
 
 /**
@@ -95,6 +97,9 @@ async function main(): Promise<void> {
 
   // One bell per transition into failure, not one per frame.
   let alarmed = false;
+  // Read once: neither the hostname nor whether this is an ssh session changes
+  // under a running process.
+  const remote = remoteHost(process.env, hostname());
   let battery: Battery | null = null;
   let batteryLowSince: number | null = null;
   // Polled regardless of --battery-floor: the charge is worth showing even when
@@ -352,6 +357,7 @@ async function main(): Promise<void> {
         elapsed,
         sessionRemaining: session.remaining,
         battery,
+        remote,
         awake: awake.label,
         awakeOk: awake.state === 'holding' || awake.state === 'off',
       });
