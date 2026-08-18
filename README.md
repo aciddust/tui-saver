@@ -4,28 +4,23 @@
 
 [한국어 문서](README.ko.md)
 
-A terminal screensaver that will not let the host fall asleep. Eighteen scenes —
-geometric solids, demoscene effects, strange attractors, a raymarched SDF —
-rendered to characters and cycled with a dissolve, while a sleep lock keeps the
-display and the machine awake underneath. macOS, Windows and Linux.
+A terminal screensaver that keeps the machine awake while it runs. 18 scenes, drawn
+with characters. macOS, Windows and Linux. No runtime dependencies.
 
-No runtime dependencies.
+The lock lasts exactly as long as the animation is on screen. Quit it and the machine
+sleeps normally again; no power setting is changed.
 
 ## Install
 
 ```sh
-npm i -g tui-saver
+npm i -g tui-saver           # needs Node 23.6 or newer
+npm i -g tui-saver@latest    # to update
 ```
 
-```sh
-tui-saver              # start it
-tui-saver --list       # what's in the box
-tui-saver --doctor     # ask the OS whether it's really staying awake
-tui-saver --help
-```
+An already-running instance keeps the version it started with. Quit and restart it
+after updating.
 
-Or run it out of a clone. Node executes the TypeScript directly, so there is
-nothing to build:
+Or from a clone, with nothing to build:
 
 ```sh
 git clone https://github.com/aciddust/tui-saver
@@ -33,11 +28,61 @@ cd tui-saver
 node src/main.ts
 ```
 
-Either way you need Node 23.6 or newer, where type stripping runs without a
-flag. The rest of this file writes `tui-saver`; from a clone, read that as
-`node src/main.ts`.
+Below, `tui-saver` means `node src/main.ts` if you are running from a clone.
 
-Press `?` for the key list, `q` to quit.
+What changed between versions is in [CHANGELOG.md](CHANGELOG.md).
+
+## Usage
+
+```sh
+tui-saver                    # start
+tui-saver --list             # what scenes there are
+tui-saver --scene globe      # one scene, no cycling
+tui-saver --only globe,fire  # a shorter playlist
+tui-saver --for 90m          # stop after 90 minutes
+tui-saver --until 18:00      # stop at 18:00
+tui-saver --while 4242       # stop when that process exits
+tui-saver --doctor           # is the lock actually held?
+tui-saver --help             # every option
+```
+
+Scenes change every 22 seconds. `f` pins the one on screen.
+
+### Keys
+
+```
+n / →        next scene            m       cycle render mode
+p / ←        previous scene        c       cycle palette
+1-9          jump to scene         r       cycle ascii ramp
+space        pause                 [ ]     slower / faster
+f            pin current scene     0       reset speed
+s            shuffle playlist      h       hide status bar
++            add 15m to the limit  ?       help
+q            quit
+```
+
+### The status bar
+
+```
+ 3/18  globe  3h42m  bat 74% ac  half  ice  32fps    awake:os   f:pin  ?:help  q:quit
+```
+
+
+| field         | meaning                                                             |
+| ------------- | ------------------------------------------------------------------- |
+| `3/18  globe` | scene number and name                                               |
+| `3h42m`       | how long this run has been up; with `--for` or `--until`, time left  |
+| `bat 74% ac`  | charge remaining; `ac` means it is not draining                      |
+| `while:4242`  | the process being waited for, with `--while`                         |
+| `ssh:host`    | the lock is held there, not on the machine you are typing on         |
+| `awake:os`    | the OS confirms the lock is held                                    |
+| `awake:self`  | the watcher says so; nothing independent has agreed (Windows)        |
+| `awake:live`  | the watcher is running, and that is all that is known               |
+| `awake:FAIL`  | not holding it; a banner and the terminal bell say so as well        |
+
+
+A narrow terminal drops the render mode, palette and frame rate first. The awake
+indicator is the last thing to go.
 
 ## Staying on one scene
 
@@ -428,19 +473,6 @@ Each scene declares the one it suits; `m` cycles the override live, `--mode`
 forces it for everything. Braille and half-block pixels come out roughly square;
 ascii pixels are twice as tall as they are wide, and the canvas exposes that
 correction so a scene can draw a circle that actually looks round.
-
-## Keys
-
-```
-n / →        next scene            m       cycle render mode
-p / ←        previous scene        c       cycle palette
-1-9          jump to scene         r       cycle ascii ramp
-space        pause                 [ ]     slower / faster
-f            pin current scene     0       reset speed
-s            shuffle playlist      h       hide status bar
-+            add 15m to the limit  ?       help
-q            quit
-```
 
 ## Options
 
