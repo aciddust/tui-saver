@@ -85,6 +85,24 @@ const VERIFY_INTERVAL_MS = 90_000;
  */
 const STALE_AFTER_INTERVALS = 3;
 
+/**
+ * How long the *first* answer may keep coming back empty before the run is called
+ * failed.
+ *
+ * Taking the lock and the OS listing it are not the same instant: CI caught a Linux
+ * run where the watcher was alive and holding an inhibitor that
+ * `systemd-inhibit --list` had not caught up with half a second later. Failing on
+ * that first miss turns a slow registration into a broken promise that never was.
+ *
+ * A duration rather than a number of attempts, because a count means whatever the
+ * verify interval happens to be — three misses is a tenth of a second in a test and
+ * four and a half minutes in a real run.
+ *
+ * Once an answer *has* arrived there is no grace at all: it was held, the OS now
+ * says it is not, and delaying that report wastes the only warning there is.
+ */
+const FIRST_ANSWER_GRACE_MS = 3_000;
+
 /** How to verify the lock from outside this program. */
 export type VerifyCommand = {
   cmd: string;
@@ -391,6 +409,8 @@ export class Awake {
   /** What the watcher said about itself on stdout, which beats guessing. */
   private reported = '';
   private verifyTimer: NodeJS.Timeout | null = null;
+  /** When we began asking, for the grace the first answer gets. */
+  private askingSince = 0;
   private child: ChildProcess | null = null;
   private stopPulse: (() => void) | null = null;
   private opts: AwakeOptions;
@@ -442,6 +462,7 @@ export class Awake {
       return;
     }
     this.launch();
+    this.askingSince = Date.now();
     this.scheduleVerify(Math.min(this.verifyInterval, 500));
   }
 
@@ -466,7 +487,15 @@ export class Awake {
         } else {
           const missing = v.expect.filter((key) => !stdout.includes(key));
           if (missing.length > 0) {
-            this.fail(`the OS no longer reports ${missing.join(', ')} — ${v.display}`);
+            const everConfirmed = this.lastVerifiedAt !== null;
+            const graceGone = Date.now() - this.askingSince > FIRST_ANSWER_GRACE_MS;
+            if (everConfirmed || graceGone) {
+              this.fail(`the OS no longer reports ${missing.join(', ')} — ${v.display}`);
+              return;
+            }
+            // Still waiting for the first answer at all. Ask again sooner than the
+            // full interval: this is a startup race, not a heartbeat.
+            this.scheduleVerify(Math.min(this.verifyInterval, 250));
             return;
           }
           this.lastVerifiedAt = Date.now();

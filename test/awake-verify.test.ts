@@ -129,3 +129,62 @@ test('an answer that has gone stale stops counting as evidence, without failing 
   assert.equal(awake.state, 'holding', 'being unable to ask is not the same as a no');
   assert.equal(awake.everFailed, false);
 });
+
+test('an OS that has not registered the lock yet is given time, not failed', async (t) => {
+  // A CI run caught this: the watcher was alive and holding, and
+  // `systemd-inhibit --list` simply had not caught up 500ms later. Failing on the
+  // first miss turns a slow registration into a broken promise that never was.
+  const path = join(tmpdir(), `tui-saver-slow-${process.pid}.txt`);
+  writeFileSync(path, 'not yet');
+  t.after(() => rmSync(path, { force: true }));
+
+  const reader: VerifyCommand = {
+    cmd: process.execPath,
+    args: ['-e', `process.stdout.write(require('node:fs').readFileSync(${JSON.stringify(path)}, 'utf8'))`],
+    expect: ['LOCK-IS-HELD'],
+    display: 'a probe that starts out unaware',
+  };
+
+  const awake = new Awake(opts, backend(reader));
+  t.after(() => awake.stop());
+  awake.start();
+
+  await new Promise((r) => setTimeout(r, 200));
+  assert.equal(awake.state, 'holding', 'a lock never yet confirmed must not be declared lost');
+  assert.equal(awake.everFailed, false);
+
+  writeFileSync(path, 'LOCK-IS-HELD');
+  await until(() => awake.evidence === 'os', 'the answer once it arrives');
+});
+
+test('an OS that never registers it does still fail, eventually', async (t) => {
+  const awake = new Awake(opts, backend(probe('nothing about any lock')));
+  t.after(() => awake.stop());
+  awake.start();
+
+  await until(() => awake.state === 'failed', 'failure after the grace runs out');
+  assert.equal(awake.everFailed, true);
+});
+
+test('a lock confirmed once and then gone is failed at the first miss', async (t) => {
+  // No grace here: it was held, and now the OS says it is not. That is the report
+  // this whole mechanism exists to make, and delaying it wastes the only warning.
+  const path = join(tmpdir(), `tui-saver-lost-${process.pid}.txt`);
+  writeFileSync(path, 'LOCK-IS-HELD');
+  t.after(() => rmSync(path, { force: true }));
+
+  const reader: VerifyCommand = {
+    cmd: process.execPath,
+    args: ['-e', `process.stdout.write(require('node:fs').readFileSync(${JSON.stringify(path)}, 'utf8'))`],
+    expect: ['LOCK-IS-HELD'],
+    display: 'a probe that changes its mind',
+  };
+
+  const awake = new Awake(opts, backend(reader));
+  t.after(() => awake.stop());
+  awake.start();
+  await until(() => awake.evidence === 'os', 'the lock confirmed first');
+
+  writeFileSync(path, 'it is gone now');
+  await until(() => awake.state === 'failed', 'failure on the very next miss');
+});
