@@ -81,3 +81,13 @@ test('a battery floor outside 0-100 is rejected rather than clamped', () => {
   assert.throws(() => parseArgs(['--battery-floor', '-1']), CliError);
   assert.throws(() => parseArgs(['--battery-floor', 'low']), CliError);
 });
+
+test('--for 0 is rejected rather than quietly ending the run at once', () => {
+  // '--duration 0' means "never advance", so a reader could reasonably expect
+  // '--for 0' to mean "no limit". It would do the opposite.
+  assert.throws(() => parseArgs(['--for', '0']), (err: unknown) => {
+    assert.ok(err instanceof CliError);
+    assert.match(err.message, /omit/);
+    return true;
+  });
+});
