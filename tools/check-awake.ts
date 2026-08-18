@@ -163,14 +163,32 @@ if (!mine) {
   const probe = probes[process.platform];
   if (probe) {
     const [pcmd, pargs, needle] = probe;
-    try {
-      const report = execFileSync(pcmd, pargs, {
-        encoding: 'utf8',
-        stdio: ['ignore', 'pipe', 'pipe'],
-      });
+    // Polled rather than asked once. Taking the lock and the OS listing it are not
+    // the same instant: CI caught a Linux run where the watcher was alive and
+    // holding an inhibitor that systemd-inhibit --list had not caught up with. A
+    // flat settle before asking was a guess, in the same way the Windows allowance
+    // was a guess.
+    const deadline = Date.now() + 5000;
+    let report = '';
+    let queryError: string | null = null;
+    for (;;) {
+      try {
+        report = execFileSync(pcmd, pargs, {
+          encoding: 'utf8',
+          stdio: ['ignore', 'pipe', 'pipe'],
+        });
+      } catch (err) {
+        // Not a timing problem — a command that cannot run will not start running.
+        queryError = (err instanceof Error ? err.message : String(err)).split('\n')[0];
+        break;
+      }
+      if (report.includes(needle) || Date.now() > deadline) break;
+      await sleep(200);
+    }
+    if (queryError === null) {
       check(report.includes(needle), `${pcmd} ${pargs.join(' ')} reports the lock`);
-    } catch (err) {
-      const msg = (err instanceof Error ? err.message : String(err)).split('\n')[0];
+    } else {
+      const msg = queryError;
       if (process.platform === 'win32') {
         process.stdout.write(`  note  powercfg /requests needs an elevated prompt — ${msg}\n`);
         process.stdout.write('        re-run this from an Administrator terminal to see the table\n');
