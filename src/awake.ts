@@ -147,7 +147,11 @@ const darwin: Backend = {
   mechanism: 'caffeinate -dis -w <pid>',
   command(pid) {
     // -d display sleep, -i idle system sleep, -s system sleep on AC power.
-    return { cmd: 'caffeinate', args: ['-dis', '-w', String(pid)], opts: { stdio: 'ignore' } };
+    return {
+      cmd: 'caffeinate',
+      args: ['-dis', '-w', String(pid)],
+      opts: { stdio: ['ignore', 'ignore', 'pipe'] },
+    };
   },
   startPulse() {
     // A short-lived assertion per pulse; caffeinate -u needs -t and exits by
@@ -242,10 +246,11 @@ const win32: Backend = {
     return {
       cmd: 'powershell.exe',
       args: ['-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-EncodedCommand', encoded],
-      // stdout is kept because the watcher reports through it; stderr is not,
-      // since PowerShell's error text is of no use to a full-screen animation.
+      // stdout carries the watcher's own report; stderr carries the reason it
+      // could not make one — if Add-Type fails to compile the shim, that text is
+      // the only thing that says so.
       // windowsHide keeps a console window from flashing up over the animation.
-      opts: { stdio: ['ignore', 'pipe', 'ignore'], windowsHide: true },
+      opts: { stdio: ['ignore', 'pipe', 'pipe'], windowsHide: true },
     };
   },
   verify: {
@@ -286,7 +291,7 @@ const linux: Backend = {
         '-f',
         '/dev/null',
       ],
-      opts: { stdio: 'ignore' },
+      opts: { stdio: ['ignore', 'ignore', 'pipe'] },
     };
   },
   startPulse() {
@@ -343,6 +348,8 @@ export class Awake {
   /** When the OS last confirmed the lock, or null if it never has. */
   lastVerifiedAt: number | null = null;
   private lastHeartbeatAt: number | null = null;
+  /** The watcher's first line of complaint, if it made one. */
+  private lastStderr = '';
   private verifyTimer: NodeJS.Timeout | null = null;
   private child: ChildProcess | null = null;
   private stopPulse: (() => void) | null = null;
@@ -437,14 +444,18 @@ export class Awake {
       const { cmd, args, opts } = backend.command(process.pid, this.opts.defeatScreensaver);
       const child = spawn(cmd, args, opts);
       this.child = child;
+      this.lastStderr = '';
       this.readHeartbeat(child);
+      this.readComplaint(child);
       child.on('error', (err: Error) => {
         this.child = null;
         // A command that cannot be launched will not launch on the second ask
         // either, so this one does not retry.
         this.fail(err.message);
       });
-      child.on('exit', (code, signal) => {
+      // 'close' rather than 'exit': it fires once the child's streams are done,
+      // so whatever it said on the way out has arrived and can be reported.
+      child.on('close', (code, signal) => {
         this.child = null;
         // Any other state means we are shutting down, or already know we failed.
         if (this.state !== 'holding') return;
@@ -453,7 +464,10 @@ export class Awake {
           this.launch();
           return;
         }
-        this.fail(`watcher exited early (code ${code}${signal ? `, ${signal}` : ''})`);
+        const said = this.lastStderr ? `: ${this.lastStderr}` : '';
+        this.fail(
+          `watcher exited early (code ${code}${signal ? `, ${signal}` : ''})${said}`,
+        );
       });
       this.state = 'holding';
       this.detail = backend.mechanism;
@@ -489,6 +503,25 @@ export class Awake {
     });
     out.on('error', () => {
       /* the exit handler is the one that matters */
+    });
+  }
+
+  /**
+   * Keeps the watcher's first line of stderr. systemd-inhibit and PowerShell both
+   * explain themselves there before giving up, and "exited early (code 1)" is not
+   * something a user can act on.
+   */
+  private readComplaint(child: ChildProcess): void {
+    const err = child.stderr;
+    if (!err) return;
+    err.setEncoding('utf8');
+    err.on('data', (chunk: string) => {
+      if (this.lastStderr) return;
+      const line = chunk.split('\n').map((l) => l.trim()).find(Boolean);
+      if (line) this.lastStderr = line.slice(0, 200);
+    });
+    err.on('error', () => {
+      /* the close handler is the one that matters */
     });
   }
 

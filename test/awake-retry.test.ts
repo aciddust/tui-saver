@@ -68,3 +68,23 @@ test('no backend for this platform is unsupported, not failed', (t) => {
   assert.equal(awake.state, 'unsupported');
   assert.equal(awake.everFailed, false);
 });
+
+test('a watcher that dies says why, when it said anything at all', async (t) => {
+  // systemd-inhibit and PowerShell both explain themselves on stderr before
+  // exiting. Throwing that away leaves "watcher exited early (code 1)", which
+  // tells the user nothing they can act on.
+  const noisy: Backend = {
+    ...sleeper,
+    command: () => ({
+      cmd: process.execPath,
+      args: ['-e', "process.stderr.write('Failed to inhibit: no session\\n'); process.exit(1)"],
+      opts: { stdio: ['ignore', 'ignore', 'pipe'] },
+    }),
+  };
+  const awake = new Awake({ enabled: true, defeatScreensaver: false }, noisy);
+  t.after(() => awake.stop());
+  awake.start();
+
+  await until(() => awake.state === 'failed', 'the failed state');
+  assert.match(awake.detail, /Failed to inhibit: no session/);
+});
