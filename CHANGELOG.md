@@ -3,6 +3,22 @@
 Dates are release dates. 0.2.0 was tagged but never published, so upgrades go
 0.1.0 → 0.3.0 → 0.4.0.
 
+## 0.4.1 — 2026-08-19
+
+Documentation only. No change to the program.
+
+### Added
+
+- This file. Anyone on an older version had no way to find out what changed; the
+  package shipped a README and nothing else. It is included in the published package,
+  since npm ships a README and a LICENSE on its own but not a changelog.
+- A Usage section directly under the screenshot in both READMEs: the commands, the
+  keys, and a labelled status bar. Every field on that bar arrived after 0.1.0 and none
+  of them were explained in one place — `awake:os` / `awake:self` / `awake:live` mean
+  nothing without a legend.
+- Install now covers updating with `npm i -g tui-saver@latest`, and the fact that an
+  already-running instance keeps the version it started with.
+
 ## 0.4.0 — 2026-08-18
 
 ### Added
