@@ -31,6 +31,29 @@ jobs:
       - run: npm test
       - run: node tools/soak.ts
 
+  package:
+    # The published package is compiled JavaScript. It does not need the Node version
+    # that running from source does — that requirement is type stripping, and only the
+    # repo uses it. So the built artifact is run on the oldest Node the package claims
+    # to support, and the claim keeps being true rather than being measured once.
+    name: package on node 22 (${{ matrix.os }})
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [macos-latest, ubuntu-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - run: node --version
+      - run: npm ci
+      - run: npm run build
+      - run: node dist/main.js --help
+      # Takes the real lock and asks the OS about it, on the minimum Node.
+      - run: node dist/main.js --doctor
+
   awake:
     # The load-bearing one. tools/check-awake.ts holds the real lock against a
     # throwaway process, asks the OS whether it is held, then SIGKILLs the target

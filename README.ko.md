@@ -13,7 +13,7 @@
 ## 설치
 
 ```sh
-npm i -g tui-saver           # Node 23.6 이상 필요
+npm i -g tui-saver           # Node 22 이상 필요
 npm i -g tui-saver@latest    # 업데이트
 ```
 
@@ -21,6 +21,8 @@ npm i -g tui-saver@latest    # 업데이트
 업데이트한 뒤에는 끄고 다시 켜야 새 버전이 된다.
 
 내려받아서 바로 돌려도 된다. 빌드 과정이 없다.
+이 경우엔 **Node 23.6 이상**이 필요하다. 그 버전부터 TypeScript를 그대로 실행할 수 있다.
+설치해서 쓰는 쪽은 컴파일된 코드라 그 버전이 필요 없다.
 
 ```sh
 git clone https://github.com/aciddust/tui-saver
