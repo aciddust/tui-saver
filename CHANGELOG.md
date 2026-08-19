@@ -3,7 +3,7 @@
 Dates are release dates. 0.2.0 was tagged but never published, so upgrades go
 0.1.0 → 0.3.0 → 0.4.0.
 
-## Unreleased
+## 0.4.2 — 2026-08-19
 
 ### Changed
 
