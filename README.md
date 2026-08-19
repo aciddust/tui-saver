@@ -13,14 +13,15 @@ sleeps normally again; no power setting is changed.
 ## Install
 
 ```sh
-npm i -g tui-saver           # needs Node 23.6 or newer
+npm i -g tui-saver           # needs Node 22 or newer
 npm i -g tui-saver@latest    # to update
 ```
 
 An already-running instance keeps the version it started with. Quit and restart it
 after updating.
 
-Or from a clone, with nothing to build:
+Or from a clone, with nothing to build. This needs **Node 23.6 or newer**, which
+runs TypeScript without a build step — the installed package is compiled and does not:
 
 ```sh
 git clone https://github.com/aciddust/tui-saver

@@ -3,6 +3,18 @@
 Dates are release dates. 0.2.0 was tagged but never published, so upgrades go
 0.1.0 → 0.3.0 → 0.4.0.
 
+## Unreleased
+
+### Changed
+
+- `engines` drops from Node 23.6 to Node 22. The 23.6 requirement was type stripping,
+  which only running from a clone needs; the published package is compiled JavaScript
+  and the only modern syntax in it is optional chaining and `??=`. Node 22 is the
+  active LTS, so the old floor turned away a large share of installs for a reason that
+  did not apply to them. Running from source still needs 23.6.
+- CI builds the package on Node 22 and runs `--doctor` with it on all three platforms,
+  so the supported floor stays a measured fact rather than a one-off check.
+
 ## 0.4.1 — 2026-08-19
 
 Documentation only. No change to the program.
